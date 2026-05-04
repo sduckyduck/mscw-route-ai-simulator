@@ -149,10 +149,50 @@ export interface PortalRef {
   dest_name?: string;
 }
 
+export interface EquipmentStats {
+  reqLevel?: number;
+  reqJob?: number;
+  reqSTR?: number;
+  reqDEX?: number;
+  reqINT?: number;
+  reqLUK?: number;
+  incSTR?: number;
+  incDEX?: number;
+  incINT?: number;
+  incLUK?: number;
+  incHP?: number;
+  incMP?: number;
+  incPAD?: number;
+  incMAD?: number;
+  incPDD?: number;
+  incMDD?: number;
+  incACC?: number;
+  incEVA?: number;
+  incSpeed?: number;
+  incJump?: number;
+  attackSpeed?: number;
+  [key: string]: string | number | undefined;
+}
+
+export interface EquipmentItem {
+  id: number;
+  name: string;
+  category?: string;
+  sub_category?: string;
+  description?: string;
+  stats?: EquipmentStats;
+  price?: number;
+  req_job_label?: string;
+  weapon_type?: string;
+  attack_speed_label?: string;
+  thumbnail?: string;
+}
+
 export interface GameData {
   monsters: Monster[];
   maps: MapInfo[];
   portals: Record<string, PortalRef[]>;
+  equipmentItems: EquipmentItem[];
 }
 
 export interface SpotMob {
