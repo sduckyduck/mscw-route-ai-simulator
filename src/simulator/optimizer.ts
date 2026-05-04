@@ -1,6 +1,6 @@
 import { estimateSpot } from './combat';
 import { buildTrainingSpots } from './data';
-import { expToNextLevel } from './expTable';
+import { MAX_EXACT_EXP_LEVEL, expToNextLevel } from './expTable';
 import { JOB_PROFILES } from './jobs';
 import { buildTravelGraph, estimateTravelMinutes, shortestHopDistance } from './travel';
 import type { GameData, RouteSegment, SimulationInput, SimulationResult, SpotEstimate } from './types';
@@ -118,8 +118,8 @@ export function simulateRoute(data: GameData, input: SimulationInput): Simulatio
   if (job.family === 'pirate') {
     warnings.push('海盗职业为国服/后续数据预留模型；当前 zip 技能数据里没有 pirate 分组，结果属于参数模拟。');
   }
-  if (input.targetLevel > 60) {
-    warnings.push('Lv.60 之后使用外推 EXP 曲线；建议后续接入准确经验表。');
+  if (input.targetLevel > MAX_EXACT_EXP_LEVEL) {
+    warnings.push(`Lv.${MAX_EXACT_EXP_LEVEL} 之后使用外推 EXP 曲线；建议后续接入更高等级准确经验表。`);
   }
 
   return {
