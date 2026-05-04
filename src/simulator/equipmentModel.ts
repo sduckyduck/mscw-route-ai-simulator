@@ -59,6 +59,18 @@ const EMPTY_BONUSES: GearBonuses = {
   jump: 0,
 };
 
+const BANNED_NAME_PATTERNS = [
+  /\bgm\b/i,
+  /admin/i,
+  /test/i,
+  /debug/i,
+  /invincible/i,
+  /supergm/i,
+  /godly/i,
+  /developer/i,
+  /maplestory invincible/i,
+];
+
 export function emptyLoadout(): GearLoadout {
   return { equipped: {}, bonuses: { ...EMPTY_BONUSES }, totalPrice: 0, summary: '未装备可用装备' };
 }
@@ -80,6 +92,44 @@ function slotOf(item: EquipmentItem): EquipmentSlot | null {
   if (sub.includes('cape')) return 'Cape';
   if (sub.includes('earring')) return 'Earrings';
   return null;
+}
+
+function isWeaponSlot(item: EquipmentItem): boolean {
+  return slotOf(item) === 'Weapon';
+}
+
+function isValidPlayerEquipment(item: EquipmentItem): boolean {
+  if (item.category !== 'Equipment') return false;
+  if (!slotOf(item)) return false;
+
+  const name = item.name ?? '';
+  const description = item.description ?? '';
+  if (BANNED_NAME_PATTERNS.some((pattern) => pattern.test(name) || pattern.test(description))) return false;
+
+  const s = item.stats ?? {};
+  const reqLevel = n(s.reqLevel);
+  if (reqLevel < 0 || reqLevel > 200) return false;
+
+  const statValues = [n(s.incSTR), n(s.incDEX), n(s.incINT), n(s.incLUK)];
+  if (statValues.some((value) => Math.abs(value) > 40)) return false;
+
+  const utilityValues = [n(s.incACC), n(s.incEVA), n(s.incSpeed), n(s.incJump)];
+  if (utilityValues.some((value) => Math.abs(value) > 60)) return false;
+
+  const hpMpValues = [n(s.incHP), n(s.incMP)];
+  if (hpMpValues.some((value) => Math.abs(value) > 500)) return false;
+
+  const defenseValues = [n(s.incPDD), n(s.incMDD)];
+  if (defenseValues.some((value) => Math.abs(value) > 350)) return false;
+
+  if (isWeaponSlot(item)) {
+    if (n(s.incPAD) > 180 || n(s.incMAD) > 180) return false;
+  } else {
+    if (n(s.incPAD) > 30 || n(s.incMAD) > 60) return false;
+  }
+
+  if (n(s.reqSTR) > 999 || n(s.reqDEX) > 999 || n(s.reqINT) > 999 || n(s.reqLUK) > 999) return false;
+  return true;
 }
 
 function familyLabel(jobKey: JobKey): string {
@@ -118,6 +168,7 @@ function isTwoHandedWeapon(item: EquipmentItem | undefined): boolean {
 }
 
 function meetsRequirements(item: EquipmentItem, base: BaseStatsForGear, jobKey: JobKey): boolean {
+  if (!isValidPlayerEquipment(item)) return false;
   const stats = item.stats ?? {};
   if (!allowedForJob(item, jobKey)) return false;
   if (slotOf(item) === 'Weapon' && !allowedWeapon(item, jobKey)) return false;
@@ -188,9 +239,10 @@ export function chooseBestGearLoadout(
 
   const chosen: Partial<Record<EquipmentSlot, EquipmentItem>> = {};
   const slots: EquipmentSlot[] = ['Weapon', 'Shield', 'Hat', 'Overall', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Earrings'];
+  const validItems = items.filter(isValidPlayerEquipment);
 
   for (const slot of slots) {
-    const candidates = items
+    const candidates = validItems
       .filter((item) => slotOf(item) === slot)
       .filter((item) => meetsRequirements(item, base, jobKey))
       .filter((item) => priceForMode(item, mode) <= base.meso)
