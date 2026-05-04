@@ -7,8 +7,13 @@ interface MonsterPayload {
   total?: number;
 }
 
+interface MapRegionPayload {
+  region: string;
+  maps: MapInfo[];
+}
+
 interface MapPayload {
-  regions: Array<{ region: string; maps: MapInfo[] }>;
+  regions: MapRegionPayload[];
   total?: number;
 }
 
@@ -23,7 +28,8 @@ export async function loadGameData(): Promise<GameData> {
     fetch(`${DATA_ROOT}/portals.json`).then((r) => r.json()) as Promise<Record<string, PortalRef[]>>,
   ]);
 
-  const maps = assertArray(mapPayload.regions).flatMap((region) =>
+  const regions = assertArray<MapRegionPayload>(mapPayload.regions);
+  const maps = regions.flatMap((region) =>
     assertArray<MapInfo>(region.maps).map((map) => ({ ...map, region: map.region ?? region.region })),
   );
 
