@@ -1,0 +1,235 @@
+import type { EquipmentItem, EquipmentStats, JobKey } from './types';
+
+export type EquipmentSlot = 'Weapon' | 'Shield' | 'Hat' | 'Top' | 'Bottom' | 'Overall' | 'Shoes' | 'Gloves' | 'Cape' | 'Earrings';
+export type GearSourceMode = 'shop' | 'craft' | 'drop' | 'none' | 'hybrid';
+
+export interface BaseStatsForGear {
+  level: number;
+  str: number;
+  dex: number;
+  int: number;
+  luk: number;
+  meso: number;
+}
+
+export interface GearBonuses {
+  str: number;
+  dex: number;
+  int: number;
+  luk: number;
+  hp: number;
+  mp: number;
+  weaponAttack: number;
+  magicAttack: number;
+  accuracy: number;
+  avoid: number;
+  weaponDefense: number;
+  magicDefense: number;
+  speed: number;
+  jump: number;
+}
+
+export interface GearLoadout {
+  equipped: Partial<Record<EquipmentSlot, EquipmentItem>>;
+  bonuses: GearBonuses;
+  totalPrice: number;
+  summary: string;
+}
+
+export interface GearDecisionResult {
+  loadout: GearLoadout;
+  cost: number;
+  text: string;
+}
+
+const EMPTY_BONUSES: GearBonuses = {
+  str: 0,
+  dex: 0,
+  int: 0,
+  luk: 0,
+  hp: 0,
+  mp: 0,
+  weaponAttack: 0,
+  magicAttack: 0,
+  accuracy: 0,
+  avoid: 0,
+  weaponDefense: 0,
+  magicDefense: 0,
+  speed: 0,
+  jump: 0,
+};
+
+export function emptyLoadout(): GearLoadout {
+  return { equipped: {}, bonuses: { ...EMPTY_BONUSES }, totalPrice: 0, summary: '未装备可用装备' };
+}
+
+function n(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function slotOf(item: EquipmentItem): EquipmentSlot | null {
+  const sub = (item.sub_category ?? '').toLowerCase();
+  if (sub === 'weapon') return 'Weapon';
+  if (sub.includes('shield')) return 'Shield';
+  if (sub.includes('hat') || sub.includes('cap') || sub.includes('helmet')) return 'Hat';
+  if (sub.includes('overall')) return 'Overall';
+  if (sub.includes('top')) return 'Top';
+  if (sub.includes('bottom') || sub.includes('pants') || sub.includes('skirt')) return 'Bottom';
+  if (sub.includes('shoe') || sub.includes('boot')) return 'Shoes';
+  if (sub.includes('glove')) return 'Gloves';
+  if (sub.includes('cape')) return 'Cape';
+  if (sub.includes('earring')) return 'Earrings';
+  return null;
+}
+
+function familyLabel(jobKey: JobKey): string {
+  if (['fighter', 'page', 'spearman'].includes(jobKey)) return 'Warrior';
+  if (['fire_poison', 'ice_lightning', 'cleric'].includes(jobKey)) return 'Mage';
+  if (['hunter', 'crossbowman'].includes(jobKey)) return 'Bowman';
+  if (['assassin', 'bandit'].includes(jobKey)) return 'Thief';
+  return 'Pirate';
+}
+
+function allowedForJob(item: EquipmentItem, jobKey: JobKey): boolean {
+  const label = item.req_job_label ?? 'All';
+  if (label === 'All') return true;
+  const family = familyLabel(jobKey);
+  return label.includes(family);
+}
+
+function allowedWeapon(item: EquipmentItem, jobKey: JobKey): boolean {
+  const type = item.weapon_type ?? '';
+  if (!type) return true;
+  if (jobKey === 'fighter') return type.includes('Sword') || type.includes('Axe') || type.includes('Blunt');
+  if (jobKey === 'page') return type.includes('Sword') || type.includes('Blunt');
+  if (jobKey === 'spearman') return type.includes('Spear') || type.includes('Polearm');
+  if (jobKey === 'hunter') return type === 'Bow';
+  if (jobKey === 'crossbowman') return type === 'Crossbow';
+  if (jobKey === 'assassin') return type === 'Claw';
+  if (jobKey === 'bandit') return type === 'Dagger';
+  if (jobKey === 'brawler') return type === 'Knuckle';
+  if (jobKey === 'gunslinger') return type === 'Gun';
+  return true;
+}
+
+function isTwoHandedWeapon(item: EquipmentItem | undefined): boolean {
+  const type = item?.weapon_type ?? '';
+  return type.startsWith('2H') || type === 'Spear' || type === 'Polearm' || type === 'Bow' || type === 'Crossbow' || type === 'Claw' || type === 'Gun' || type === 'Knuckle';
+}
+
+function meetsRequirements(item: EquipmentItem, base: BaseStatsForGear, jobKey: JobKey): boolean {
+  const stats = item.stats ?? {};
+  if (!allowedForJob(item, jobKey)) return false;
+  if (slotOf(item) === 'Weapon' && !allowedWeapon(item, jobKey)) return false;
+  if (n(stats.reqLevel) > base.level) return false;
+  if (n(stats.reqSTR) > base.str) return false;
+  if (n(stats.reqDEX) > base.dex) return false;
+  if (n(stats.reqINT) > base.int) return false;
+  if (n(stats.reqLUK) > base.luk) return false;
+  return true;
+}
+
+function scoreItem(item: EquipmentItem, jobKey: JobKey, mode: GearSourceMode): number {
+  const s: EquipmentStats = item.stats ?? {};
+  const price = Math.max(0, item.price ?? 0);
+  const family = familyLabel(jobKey);
+  const primary = family === 'Warrior' ? n(s.incSTR) : family === 'Mage' ? n(s.incINT) : family === 'Thief' ? n(s.incLUK) : n(s.incDEX);
+  const secondary = family === 'Warrior' ? n(s.incDEX) : family === 'Mage' ? n(s.incLUK) : family === 'Thief' ? n(s.incDEX) : n(s.incSTR);
+  let score = 0;
+  score += n(s.incPAD) * (family === 'Mage' ? 0.4 : 10);
+  score += n(s.incMAD) * (family === 'Mage' ? 9 : 0.3);
+  score += primary * 5;
+  score += secondary * 3.2;
+  score += n(s.incACC) * 3.8;
+  score += n(s.incEVA) * 1.8;
+  score += n(s.incPDD) * 0.12;
+  score += n(s.incMDD) * 0.08;
+  score += n(s.incSpeed) * 0.7;
+  score += n(s.incHP) * 0.025;
+  score += n(s.incMP) * 0.02;
+  if (mode === 'poor_start' || mode === 'none') score -= price / 900;
+  return score;
+}
+
+function addBonuses(out: GearBonuses, item: EquipmentItem) {
+  const s = item.stats ?? {};
+  out.str += n(s.incSTR);
+  out.dex += n(s.incDEX);
+  out.int += n(s.incINT);
+  out.luk += n(s.incLUK);
+  out.hp += n(s.incHP);
+  out.mp += n(s.incMP);
+  out.weaponAttack += n(s.incPAD);
+  out.magicAttack += n(s.incMAD);
+  out.accuracy += n(s.incACC);
+  out.avoid += n(s.incEVA);
+  out.weaponDefense += n(s.incPDD);
+  out.magicDefense += n(s.incMDD);
+  out.speed += n(s.incSpeed);
+  out.jump += n(s.incJump);
+}
+
+function priceForMode(item: EquipmentItem, mode: GearSourceMode): number {
+  const price = Math.max(0, item.price ?? 0);
+  if (mode === 'none') return Number.POSITIVE_INFINITY;
+  if (mode === 'drop') return 0;
+  if (mode === 'craft') return Math.round(price * 0.65);
+  if (mode === 'hybrid') return Math.round(price * 0.8);
+  return price;
+}
+
+export function chooseBestGearLoadout(
+  items: EquipmentItem[],
+  jobKey: JobKey,
+  base: BaseStatsForGear,
+  mode: GearSourceMode,
+): GearLoadout {
+  if (mode === 'none') return emptyLoadout();
+
+  const chosen: Partial<Record<EquipmentSlot, EquipmentItem>> = {};
+  const slots: EquipmentSlot[] = ['Weapon', 'Shield', 'Hat', 'Overall', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Earrings'];
+
+  for (const slot of slots) {
+    const candidates = items
+      .filter((item) => slotOf(item) === slot)
+      .filter((item) => meetsRequirements(item, base, jobKey))
+      .filter((item) => priceForMode(item, mode) <= base.meso)
+      .sort((a, b) => scoreItem(b, jobKey, mode) - scoreItem(a, jobKey, mode));
+    if (candidates[0]) chosen[slot] = candidates[0];
+  }
+
+  if (chosen.Overall) {
+    delete chosen.Top;
+    delete chosen.Bottom;
+  }
+  if (isTwoHandedWeapon(chosen.Weapon)) {
+    delete chosen.Shield;
+  }
+
+  const bonuses = { ...EMPTY_BONUSES };
+  let totalPrice = 0;
+  for (const item of Object.values(chosen)) {
+    if (!item) continue;
+    addBonuses(bonuses, item);
+    totalPrice += priceForMode(item, mode);
+  }
+
+  const summary = Object.entries(chosen)
+    .map(([slot, item]) => `${slot}: ${item?.name}`)
+    .join(' / ') || '没有找到可穿装备';
+
+  return { equipped: chosen, bonuses, totalPrice, summary };
+}
+
+export function decideGear(
+  items: EquipmentItem[],
+  jobKey: JobKey,
+  base: BaseStatsForGear,
+  mode: GearSourceMode,
+): GearDecisionResult {
+  const loadout = chooseBestGearLoadout(items, jobKey, base, mode);
+  if (mode === 'none') return { loadout, cost: 0, text: '装备策略：不主动购买装备' };
+  if (loadout.totalPrice <= 0) return { loadout, cost: 0, text: `装备来源 ${mode}：使用免费/掉落可用装备；${loadout.summary}` };
+  if (loadout.totalPrice > base.meso) return { loadout: emptyLoadout(), cost: 0, text: `金币不足，暂不换装` };
+  return { loadout, cost: loadout.totalPrice, text: `装备来源 ${mode}：换装成本 ${loadout.totalPrice.toLocaleString()}；${loadout.summary}` };
+}
