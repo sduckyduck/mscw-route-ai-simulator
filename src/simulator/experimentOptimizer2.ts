@@ -296,11 +296,22 @@ export function runBuildExperiments(data: GameData, jobKey: JobKey, startLevel: 
     let totalGearCost = 0;
     let currentGear = emptyLoadout();
     let lastGearSummary = '';
+    let cumulativeKills = 0;
+    let cumulativeFarmedHours = 0;
     const warnings: string[] = [];
 
     for (let level = Math.max(10, startLevel); level < targetLevel; level += 1) {
       const apDecision = allocateAp(stats, jobKey, level, candidate);
-      const gear = decideGear(data.equipmentItems, jobKey, { level, str: stats.str, dex: stats.dex, int: stats.int, luk: stats.luk, meso: stats.meso }, candidate.gearSource);
+      const dropContext = candidate.gearSource === 'drop'
+        ? { cumulativeKills, farmedHours: cumulativeFarmedHours, previousLoadout: currentGear }
+        : undefined;
+      const gear = decideGear(
+        data.equipmentItems,
+        jobKey,
+        { level, str: stats.str, dex: stats.dex, int: stats.int, luk: stats.luk, meso: stats.meso },
+        candidate.gearSource,
+        dropContext,
+      );
       let gearCost = 0;
       let gearText = gear.text;
       if (gear.loadout.summary !== lastGearSummary) {
@@ -351,6 +362,8 @@ export function runBuildExperiments(data: GameData, jobKey: JobKey, startLevel: 
       }
 
       stats.meso += best.mesoEarned - best.potionCost;
+      cumulativeKills += best.killsPerHour * best.hours;
+      cumulativeFarmedHours += best.hours;
       decisions.push(best);
     }
 
