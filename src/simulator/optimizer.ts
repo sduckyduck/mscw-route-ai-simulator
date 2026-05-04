@@ -1,3 +1,4 @@
+import { generateAllocationPlan } from './allocation2';
 import { estimateSpot } from './combat';
 import { buildTrainingSpots } from './data';
 import { MAX_EXACT_EXP_LEVEL, expToNextLevel } from './expTable';
@@ -37,6 +38,7 @@ function shouldMerge(last: RouteSegment | undefined, next: RouteSegment): boolea
 
 export function simulateRoute(data: GameData, input: SimulationInput): SimulationResult {
   const job = JOB_PROFILES[input.jobKey];
+  const allocationPlan = generateAllocationPlan(input.jobKey, input.startLevel, input.targetLevel, input.strategy);
   const warnings: string[] = [];
   const spots = buildTrainingSpots(data);
   const travelGraph = buildTravelGraph(data);
@@ -121,10 +123,12 @@ export function simulateRoute(data: GameData, input: SimulationInput): Simulatio
   if (input.targetLevel > MAX_EXACT_EXP_LEVEL) {
     warnings.push(`Lv.${MAX_EXACT_EXP_LEVEL} 之后使用外推 EXP 曲线；建议后续接入更高等级准确经验表。`);
   }
+  warnings.push('AP/SP 分配目前是 heuristic optimizer，不是实测训练模型；后续可以用玩家实测击杀时间和药耗校准权重。');
 
   return {
     input,
     job,
+    allocationPlan,
     totalHours: round(totalHours),
     totalPotionCost: Math.round(totalPotionCost),
     totalNetMeso: Math.round(totalNetMeso),
