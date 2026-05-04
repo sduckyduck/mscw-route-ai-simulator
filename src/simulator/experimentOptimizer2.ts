@@ -19,6 +19,17 @@ export interface BuildCandidate {
   strategy: Strategy;
 }
 
+export interface MonsterHitBreakdown {
+  monsterName: string;
+  monsterLevel: number;
+  monsterAvoid: number;
+  avoidEstimated: boolean;
+  count: number;
+  weight: number;
+  hitRate: number;
+  contribution: number;
+}
+
 export interface LevelDecision {
   level: number;
   mapName: string;
@@ -31,6 +42,7 @@ export interface LevelDecision {
   gearCost: number;
   deathsExpected: number;
   hitRate: number;
+  hitBreakdown: MonsterHitBreakdown[];
   comfort: number;
   reason: string;
   apDecision: string;
@@ -153,6 +165,39 @@ function mapSuitability(spot: TrainingSpot, jobKey: JobKey): number {
 const spForLevel = (level: number) => (level < 10 ? 0 : level === 10 || level === 30 ? 1 : 3);
 const mesoPerKill = (level: number, exp: number, candidate: BuildCandidate) => level * 2.2 + exp * 0.45 + (candidate.gearSource === 'drop' ? level * 1.2 : candidate.gearSource === 'craft' ? level * 0.8 : 0);
 
+function estimatedMonsterAvoid(monsterLevel: number): number {
+  return Math.max(1, Math.round(monsterLevel * 0.55));
+}
+
+function monsterAvoidValue(monster: TrainingSpot['mobs'][number]['monster']): { value: number; estimated: boolean } {
+  const raw = (monster as { eva?: number; avoid?: number }).eva ?? (monster as { eva?: number; avoid?: number }).avoid;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return { value: Math.max(0, raw), estimated: false };
+  }
+  return { value: estimatedMonsterAvoid(monster.level), estimated: true };
+}
+
+function buildHitBreakdown(spot: TrainingSpot, level: number, jobKey: JobKey, acc: number): MonsterHitBreakdown[] {
+  const total = Math.max(1, spot.totalMobCount);
+  return spot.mobs.map((item) => {
+    const avoidInfo = monsterAvoidValue(item.monster);
+    const hitRate = JOB_PROFILES[jobKey].family === 'magician'
+      ? 1
+      : meowDbPhysicalHitChance({ playerLevel: level, monsterLevel: item.monster.level, accuracy: acc, avoid: avoidInfo.value });
+    const weight = item.count / total;
+    return {
+      monsterName: item.monster.name,
+      monsterLevel: item.monster.level,
+      monsterAvoid: avoidInfo.value,
+      avoidEstimated: avoidInfo.estimated,
+      count: item.count,
+      weight,
+      hitRate,
+      contribution: hitRate * weight,
+    };
+  });
+}
+
 function estimateSpot(
   spot: TrainingSpot,
   level: number,
@@ -170,8 +215,9 @@ function estimateSpot(
   const eff = effective(stats, gear);
   const acc = accuracy(stats, jobKey, gear, skill.accuracyBonus);
   const avd = avoid(stats, level, gear, skill.avoidBonus);
-  const mobAvoid = spot.mobs.reduce((sum, item) => sum + (item.monster.eva ?? 0) * item.count, 0) / Math.max(1, spot.totalMobCount);
-  const hitRate = JOB_PROFILES[jobKey].family === 'magician' ? 1 : meowDbPhysicalHitChance({ playerLevel: level, monsterLevel: spot.avgLevel, accuracy: acc, avoid: mobAvoid });
+  const hitBreakdown = buildHitBreakdown(spot, level, jobKey, acc);
+  const hitRate = hitBreakdown.reduce((sum, item) => sum + item.contribution, 0);
+  const weakestHit = hitBreakdown.reduce((min, item) => Math.min(min, item.hitRate), 1);
   const levelPenalty = spot.avgLevel > level ? 1 / (1 + (spot.avgLevel - level) * 0.08) : 1;
   const damage = (eff.weaponAttack * 2.6 + eff.str * 1.35 + eff.dex * 0.35 + eff.luk * 0.45 + eff.int * 0.25) * hitRate * levelPenalty * skill.damageMultiplier;
   const killSeconds = clamp(spot.avgHp / Math.max(1, damage) + 0.75, 0.65, 18) / skill.speedMultiplier;
@@ -200,8 +246,9 @@ function estimateSpot(
     gearCost,
     deathsExpected,
     hitRate,
+    hitBreakdown,
     comfort,
-    reason: hitRate < 0.75 ? 'MeowDB 命中公式判定命中不足，效率下降' : deathsExpected > 0.2 ? '风险较高但收益可观' : '综合效率较好',
+    reason: hitRate < 0.75 || weakestHit < 0.5 ? '部分怪物命中不足，地图效率被压低' : deathsExpected > 0.2 ? '风险较高但收益可观' : '综合效率较好',
     apDecision,
     gearDecision,
     spDecisions,
@@ -220,7 +267,8 @@ function estimateSpot(
 }
 
 function decisionScore(decision: LevelDecision): number {
-  return decision.expPerHour - decision.potionCost * 0.8 - decision.deathsExpected * 8000 + decision.comfort * 40;
+  const weakestPenalty = Math.max(0, 0.65 - Math.min(...decision.hitBreakdown.map((item) => item.hitRate))) * 12000;
+  return decision.expPerHour - decision.potionCost * 0.8 - decision.deathsExpected * 8000 + decision.comfort * 40 - weakestPenalty;
 }
 
 function scoreResult(result: Omit<BuildExperimentResult, 'objectiveScore'>, objective: ObjectivePreset): number {
