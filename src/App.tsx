@@ -3,6 +3,7 @@ import { loadGameData } from './simulator/data';
 import { JOB_OPTIONS } from './simulator/jobs';
 import { routeToMarkdown, formatHours, formatMeso } from './simulator/report';
 import { simulateRoute } from './simulator/optimizer';
+import { SandboxPanel } from './SandboxPanel';
 import type { CharacterStats, GameData, JobKey, SimulationInput, SimulationResult, Strategy } from './simulator/types';
 
 const DEFAULT_INPUT: SimulationInput = {
@@ -253,7 +254,7 @@ export default function App() {
         </div>
         <div className="hero-badge">
           <span>AI BOT</span>
-          <strong>路线搜索 v0.3</strong>
+          <strong>路线搜索 v0.4</strong>
         </div>
       </header>
 
@@ -374,6 +375,7 @@ export default function App() {
 
               <BotTimeline result={result} />
               <AllocationPanel result={result} />
+              {data ? <SandboxPanel data={data} input={result.input} /> : null}
               <RouteTable result={result} />
 
               <div className="actions">
