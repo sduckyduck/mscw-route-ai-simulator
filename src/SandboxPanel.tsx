@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { runSandboxSimulation, type SandboxFrame, type SandboxRunResult } from './simulator/sandboxEngine';
-import type { ObjectivePreset } from './simulator/experimentOptimizer';
+import type { ObjectivePreset } from './simulator/experimentOptimizer2';
 import type { GameData, SimulationInput } from './simulator/types';
 import { formatHours, formatMeso } from './simulator/report';
 import './sandbox.css';
@@ -91,6 +91,52 @@ function Bar({ label, value, className = '' }: { label: string; value: number; c
       <span>{label}</span>
       <div className="sandbox-bar"><div className={className} style={{ width: percent(value) }} /></div>
       <b>{percent(value)}</b>
+    </div>
+  );
+}
+
+function DecisionLog({ result }: { result: SandboxRunResult }) {
+  return (
+    <div className="sandbox-table-wrap decision-log">
+      <div className="section-title">AI 小人逐级决策日志</div>
+      <table>
+        <thead>
+          <tr>
+            <th>等级</th>
+            <th>AP 决策</th>
+            <th>SP 决策</th>
+            <th>装备决策</th>
+            <th>地图 / 怪物</th>
+            <th>命中</th>
+            <th>本级耗时</th>
+            <th>药耗/MP</th>
+            <th>死亡期望</th>
+            <th>当前属性</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.best.decisions.map((decision) => (
+            <tr key={`decision-${decision.level}`}>
+              <td>Lv.{decision.level}</td>
+              <td>{decision.apDecision}</td>
+              <td>{decision.spDecisions.length ? decision.spDecisions.map((line) => <div key={line}>{line}</div>) : '—'}</td>
+              <td>{decision.gearDecision}</td>
+              <td><strong>{decision.mapName}</strong><br />{decision.monsterNames.join(' / ')}</td>
+              <td>{(decision.hitRate * 100).toFixed(1)}%</td>
+              <td>{formatHours(decision.hours)}</td>
+              <td>{formatMeso(decision.potionCost)}</td>
+              <td>{decision.deathsExpected.toFixed(2)}</td>
+              <td>
+                STR {decision.statSnapshot.str} / DEX {decision.statSnapshot.dex}<br />
+                WATK {decision.statSnapshot.weaponAttack} / ACC {decision.statSnapshot.accuracy}<br />
+                AVOID {decision.statSnapshot.avoid}
+              </td>
+              <td>{decision.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -241,6 +287,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
             </div>
           </div>
 
+          <DecisionLog result={result} />
           <AlternativesTable result={result} />
         </>
       ) : (
