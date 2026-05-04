@@ -1,4 +1,4 @@
-import { runBuildExperiments, type BuildExperimentResult, type ObjectivePreset } from './experimentOptimizer';
+import { runBuildExperiments, type BuildExperimentResult, type ObjectivePreset } from './experimentOptimizer2';
 import type { GameData, JobKey } from './types';
 
 export type SandboxAction = 'travel' | 'fight' | 'loot' | 'level_up' | 'death' | 'equip' | 'summary';
@@ -98,6 +98,7 @@ function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
       const progress = Math.min(99, Math.round((i / chunks) * 100));
       const hp = Math.max(15, 100 - (hpDrop * i) / chunks);
       const mp = Math.max(10, 100 - (mpDrop * i) / chunks);
+      const skillNote = decision.spDecisions?.length ? ` 本级 SP：${decision.spDecisions[0]}` : '';
       pushFrame(frames, {
         virtualMinute: round(virtualMinute),
         level: decision.level,
@@ -110,7 +111,7 @@ function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
         meso: Math.round(meso),
         kills,
         deaths,
-        caption: `${decision.mapName} 打 ${decision.monsterNames.slice(0, 2).join(' / ')}，命中率 ${(decision.hitRate * 100).toFixed(1)}%，舒适度 ${decision.comfort.toFixed(1)}。`,
+        caption: `${decision.mapName} 打 ${decision.monsterNames.slice(0, 2).join(' / ')}，MeowDB 命中率 ${(decision.hitRate * 100).toFixed(1)}%，舒适度 ${decision.comfort.toFixed(1)}。${skillNote}`,
       });
     }
 
@@ -130,7 +131,7 @@ function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
         meso: Math.round(meso),
         kills,
         deaths,
-        caption: `死亡 ${newDeaths} 次：该地图风险偏高，报告会建议降低越级或补命中/装备。`,
+        caption: `死亡 ${newDeaths} 次：该地图风险偏高，报告会建议降低越级、补命中或调整 SP/AP。`,
       });
     }
 
@@ -146,7 +147,7 @@ function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
       meso: Math.round(meso),
       kills,
       deaths,
-      caption: `升级到 Lv.${decision.level + 1}。本级耗时 ${formatHours(decision.hours)}，药耗 ${formatMeso(decision.potionCost)}。`,
+      caption: `升级到 Lv.${decision.level + 1}。本级耗时 ${formatHours(decision.hours)}，药耗/MP压力 ${formatMeso(decision.potionCost)}。`,
     });
   }
 
@@ -185,6 +186,15 @@ function buildFindings(best: BuildExperimentResult, alternatives: BuildExperimen
     });
   }
 
+  const skillLines = Object.entries(best.finalSkills ?? {}).filter(([, value]) => value > 0).slice(0, 6);
+  if (skillLines.length) {
+    findings.push({
+      type: 'optimization',
+      title: 'AI 小人最终 SP 倾向',
+      detail: skillLines.map(([name, value]) => `${name} ${value}`).join(' / '),
+    });
+  }
+
   if (best.expectedDeaths > 1) {
     findings.push({
       type: 'warning',
@@ -196,8 +206,8 @@ function buildFindings(best: BuildExperimentResult, alternatives: BuildExperimen
   if (best.totalPotionCost > best.totalMesoEarned * 0.25) {
     findings.push({
       type: 'warning',
-      title: '药耗吞掉收益',
-      detail: '穷鬼开荒目标下应降低越级、换低伤害怪或延后高消耗地图。',
+      title: '药耗/MP 成本吞掉收益',
+      detail: '穷鬼开荒目标下应降低越级、换低伤害怪、选择低 MP 技能，或延后高消耗地图。',
     });
   }
 
@@ -219,18 +229,19 @@ function buildReport(best: BuildExperimentResult, alternatives: BuildExperimentR
     '',
     `- 总耗时：${formatHours(best.totalHours)}`,
     `- 最终金币：${formatMeso(best.endingMeso)}`,
-    `- 药水消耗：${formatMeso(best.totalPotionCost)}`,
+    `- 药水/MP 消耗：${formatMeso(best.totalPotionCost)}`,
     `- 装备消耗：${formatMeso(best.totalGearCost)}`,
     `- 预期死亡：${best.expectedDeaths}`,
     `- 爽玩舒适度：${best.comfortScore}/100`,
     `- 最终属性：STR ${best.finalStats.str} / DEX ${best.finalStats.dex} / INT ${best.finalStats.int} / LUK ${best.finalStats.luk}`,
     `- 最终战斗：WATK ${best.finalStats.weaponAttack} / ACC ${best.finalStats.accuracy} / AVOID ${best.finalStats.avoid}`,
+    `- 最终技能：${Object.entries(best.finalSkills ?? {}).filter(([, value]) => value > 0).map(([name, value]) => `${name} ${value}`).join(' / ') || '—'}`,
     '',
     '## 关键结论',
     ...findings.map((x) => `- ${x.title}：${x.detail}`),
     '',
     '## 方案排名',
-    '| 排名 | 方案 | 分数 | 时间 | 最终金币 | 药耗 | 装备 | 死亡 | 舒适度 |',
+    '| 排名 | 方案 | 分数 | 时间 | 最终金币 | 药耗/MP | 装备 | 死亡 | 舒适度 |',
     '|---:|---|---:|---:|---:|---:|---:|---:|---:|',
   ];
 
@@ -238,10 +249,10 @@ function buildReport(best: BuildExperimentResult, alternatives: BuildExperimentR
     lines.push(`| ${index + 1} | ${item.candidate.label} | ${item.objectiveScore} | ${formatHours(item.totalHours)} | ${formatMeso(item.endingMeso)} | ${formatMeso(item.totalPotionCost)} | ${formatMeso(item.totalGearCost)} | ${item.expectedDeaths} | ${item.comfortScore} |`);
   });
 
-  lines.push('', '## 最优路线逐级决策', '| 等级 | 地图 | 怪物 | 时间 | EXP/h | 命中 | 药耗 | 死亡期望 | 原因 |', '|---:|---|---|---:|---:|---:|---:|---:|---|');
+  lines.push('', '## 最优路线逐级决策', '| 等级 | 地图 | 怪物 | 时间 | EXP/h | MeowDB命中 | 药耗/MP | 死亡期望 | SP 决策 | 原因 |', '|---:|---|---|---:|---:|---:|---:|---:|---|---|');
 
   for (const decision of best.decisions) {
-    lines.push(`| Lv.${decision.level} | ${decision.mapName} | ${decision.monsterNames.join(', ')} | ${formatHours(decision.hours)} | ${Math.round(decision.expPerHour).toLocaleString()} | ${(decision.hitRate * 100).toFixed(1)}% | ${formatMeso(decision.potionCost)} | ${decision.deathsExpected.toFixed(2)} | ${decision.reason} |`);
+    lines.push(`| Lv.${decision.level} | ${decision.mapName} | ${decision.monsterNames.join(', ')} | ${formatHours(decision.hours)} | ${Math.round(decision.expPerHour).toLocaleString()} | ${(decision.hitRate * 100).toFixed(1)}% | ${formatMeso(decision.potionCost)} | ${decision.deathsExpected.toFixed(2)} | ${(decision.spDecisions ?? []).join('<br>') || '—'} | ${decision.reason} |`);
   }
 
   return lines.join('\n');
