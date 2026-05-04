@@ -206,10 +206,8 @@ function finalizeRange(
   };
 }
 
-export function statDerivedAccuracy(dex: number, luk: number, weaponType?: WeaponType): number {
-  if (weaponType === 'Bow' || weaponType === 'Crossbow') return Math.floor(dex / 3);
-  if (weaponType === 'Claw') return Math.floor(dex + Math.floor(luk / 10));
-  return Math.floor(dex / 3) + Math.floor(luk / 6);
+export function statDerivedAccuracy(dex: number, luk: number): number {
+  return Math.floor(Math.max(0, dex) / 3) + Math.floor(Math.max(0, luk) / 6) + 5;
 }
 
 export function meowDbPhysicalHitChance(input: HitChanceInput): number {
