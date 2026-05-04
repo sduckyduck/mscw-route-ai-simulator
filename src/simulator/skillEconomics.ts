@@ -53,7 +53,22 @@ export const SKILL_OPTIONS: SkillOption[] = [
     survivalGain: 0,
     mpCostPerUse: 0,
     mpSavePerKill: 0,
-    reason: '战士命中技能。没有它时 ACC 只能来自 DEX/LUK 属性和装备 ACC。',
+    reason: '战士命中技能。命中不够时，补它可能比硬加主属性更划算。',
+  },
+  {
+    name: 'Improved HP Recovery',
+    jobKeys: ['fighter', 'page', 'spearman'],
+    minLevel: 10,
+    maxLevel: 15,
+    role: 'survival',
+    damageGain: 0,
+    accuracyGain: 0,
+    avoidGain: 0,
+    speedGain: 0,
+    survivalGain: 0.008,
+    mpCostPerUse: 0,
+    mpSavePerKill: 0.35,
+    reason: '提高自然回血/补给效率。相比 Max HP，上限不影响每瓶药恢复量，前期收益更看场景。',
   },
   {
     name: 'Power Strike',
@@ -68,22 +83,37 @@ export const SKILL_OPTIONS: SkillOption[] = [
     survivalGain: 0,
     mpCostPerUse: 4.8,
     mpSavePerKill: 0,
-    reason: '战士早期单体主攻，直接降低击杀时间。',
+    reason: '战士早期单体主攻，直接降低击杀时间，但会增加 MP/药耗压力。',
   },
   {
-    name: 'Improving Max HP Increase',
+    name: 'Slash Blast',
     jobKeys: ['fighter', 'page', 'spearman'],
-    minLevel: 10,
+    minLevel: 18,
+    maxLevel: 20,
+    role: 'aoe',
+    damageGain: 0.012,
+    accuracyGain: 0,
+    avoidGain: 0,
+    speedGain: 0.004,
+    survivalGain: 0,
+    mpCostPerUse: 7.2,
+    mpSavePerKill: 0,
+    reason: '密集图群攻收益高，但低蓝/穷鬼路线下不一定优先。',
+  },
+  {
+    name: 'Max HP Increase',
+    jobKeys: ['fighter', 'page', 'spearman'],
+    minLevel: 20,
     maxLevel: 10,
     role: 'survival',
     damageGain: 0,
     accuracyGain: 0,
     avoidGain: 0,
     speedGain: 0,
-    survivalGain: 0.035,
+    survivalGain: 0.006,
     mpCostPerUse: 0,
     mpSavePerKill: 0,
-    reason: '提高生存和容错，低死亡/穷鬼路线收益高。',
+    reason: '提高 HP 上限主要防止被秒；如果当前药水固定回 50 且不会死，早期收益低。',
   },
   {
     name: 'Double Shot',
@@ -178,17 +208,17 @@ export const SKILL_OPTIONS: SkillOption[] = [
   {
     name: 'Improving Max MP Increase',
     jobKeys: ['fire_poison', 'ice_lightning', 'cleric'],
-    minLevel: 10,
+    minLevel: 18,
     maxLevel: 10,
     role: 'mp_save',
     damageGain: 0,
     accuracyGain: 0,
     avoidGain: 0,
     speedGain: 0,
-    survivalGain: 0.004,
+    survivalGain: 0.002,
     mpCostPerUse: 0,
-    mpSavePerKill: 1.1,
-    reason: '降低长期 MP 压力，穷鬼/少药路线优先。',
+    mpSavePerKill: 0.45,
+    reason: '长期降低 MP 压力；如果当前不缺蓝，前期不一定优先。',
   },
   {
     name: 'Weapon Mastery',
@@ -246,12 +276,13 @@ function scoreSkill(option: SkillOption, context: SkillChoiceContext): number {
   score += option.accuracyGain * hitDeficit * 10;
   score += option.avoidGain * risk * 1.6;
   score += option.speedGain * (fastest ? 160 : 100);
-  score += option.survivalGain * (context.objective === 'low_death' ? 220 : 90);
-  score += option.mpSavePerKill * (poor ? 6 : 2);
-  score -= option.mpCostPerUse * (poor ? 0.8 : 0.22);
+  score += option.survivalGain * (context.objective === 'low_death' ? 180 : 55);
+  score += option.mpSavePerKill * (poor ? 6 : 1.6);
+  score -= option.mpCostPerUse * (poor ? 0.9 : 0.24);
 
   if (option.name === 'Arrow Blow' && poor) score += 12;
   if (option.name === 'Double Shot' && poor) score -= 10;
+  if (option.name === 'Max HP Increase' && context.deathRisk < 0.12) score -= 20;
   if (option.name === 'Precise Strikes' && hitDeficit > 0.05) score += 10;
   if (option.role === 'accuracy' && hitDeficit > 0.2) score += 18;
   return score;
