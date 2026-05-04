@@ -1,4 +1,4 @@
-import { generateAllocationPlan } from './allocation3';
+import { generateAllocationPlan } from './allocation4';
 import { estimateSpot } from './combat';
 import { buildTrainingSpots } from './data';
 import { MAX_EXACT_EXP_LEVEL, expToNextLevel } from './expTable';
