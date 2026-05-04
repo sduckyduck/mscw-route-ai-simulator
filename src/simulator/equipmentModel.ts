@@ -147,7 +147,7 @@ function scoreItem(item: EquipmentItem, jobKey: JobKey, mode: GearSourceMode): n
   score += n(s.incSpeed) * 0.7;
   score += n(s.incHP) * 0.025;
   score += n(s.incMP) * 0.02;
-  if (mode === 'poor_start' || mode === 'none') score -= price / 900;
+  if (mode === 'none') score -= price / 900;
   return score;
 }
 
