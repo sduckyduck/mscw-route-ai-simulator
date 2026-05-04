@@ -258,6 +258,38 @@
   background: #fff0bd;
 }
 
+.hit-breakdown-list {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.hit-breakdown-list > div {
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid #b9874a;
+  background: #fff7df;
+  font-weight: 800;
+}
+
+.hit-breakdown-list small {
+  display: block;
+  margin-top: 2px;
+  color: #755330;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.hit-breakdown-list .hit-low {
+  background: #ffe1d8;
+  border-color: #bd5b3f;
+}
+
+.hit-breakdown-list .hit-ok {
+  background: #ecffd9;
+  border-color: #79a34a;
+}
+
 .sandbox-empty {
   margin-top: 14px;
   padding: 18px;
