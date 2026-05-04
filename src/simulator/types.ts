@@ -34,6 +34,76 @@ export interface JobProfile {
   preferredLevelDelta: [number, number];
 }
 
+export interface CharacterStats {
+  str: number;
+  dex: number;
+  int: number;
+  luk: number;
+  hp: number;
+  mp: number;
+}
+
+export interface DerivedCombatStats {
+  primaryStat: number;
+  secondaryStat: number;
+  accuracy: number;
+  avoid: number;
+  weaponAttack: number;
+  magicAttack: number;
+  attackPower: number;
+  mastery: number;
+  skillMult: number;
+  magicSkillDamage: number;
+  attackInterval: number;
+  critRate: number;
+  critDamage: number;
+  rangeScore: number;
+  aoeScore: number;
+  mobilityScore: number;
+  survivability: number;
+  potionIntensity: number;
+}
+
+export interface SkillPointAllocation {
+  skill: string;
+  points: number;
+  total: number;
+  reason: string;
+}
+
+export interface LevelAllocationStep {
+  level: number;
+  stage: 'first_job' | 'second_job' | 'future';
+  apGained: number;
+  apAllocated: Partial<Record<keyof CharacterStats, number>>;
+  statsAfter: CharacterStats;
+  spGained: number;
+  spAllocated: SkillPointAllocation[];
+  keySkills: string[];
+  note: string;
+}
+
+export interface CharacterBuildSnapshot {
+  level: number;
+  jobKey: JobKey;
+  stats: CharacterStats;
+  skillLevels: Record<string, number>;
+  derived: DerivedCombatStats;
+  step?: LevelAllocationStep;
+}
+
+export interface AllocationPlan {
+  jobKey: JobKey;
+  startLevel: number;
+  targetLevel: number;
+  strategy: Strategy;
+  summary: string[];
+  finalStats: CharacterStats;
+  finalDerived: DerivedCombatStats;
+  finalSkills: Record<string, number>;
+  steps: LevelAllocationStep[];
+}
+
 export interface MobMapRef {
   id: number;
   name: string;
@@ -150,6 +220,7 @@ export interface RouteSegment {
 export interface SimulationResult {
   input: SimulationInput;
   job: JobProfile;
+  allocationPlan: AllocationPlan;
   totalHours: number;
   totalPotionCost: number;
   totalNetMeso: number;
