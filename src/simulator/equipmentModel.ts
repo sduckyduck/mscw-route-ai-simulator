@@ -12,6 +12,12 @@ export interface BaseStatsForGear {
   meso: number;
 }
 
+export interface DropGearContext {
+  cumulativeKills: number;
+  farmedHours: number;
+  previousLoadout?: GearLoadout;
+}
+
 export interface GearBonuses {
   str: number;
   dex: number;
@@ -180,6 +186,33 @@ function meetsRequirements(item: EquipmentItem, base: BaseStatsForGear, jobKey: 
   return true;
 }
 
+function slotDropKills(slot: EquipmentSlot): number {
+  if (slot === 'Weapon') return 2600;
+  if (slot === 'Overall' || slot === 'Top' || slot === 'Bottom') return 1900;
+  if (slot === 'Shield') return 2200;
+  if (slot === 'Gloves' || slot === 'Shoes' || slot === 'Hat') return 1500;
+  return 2400;
+}
+
+function dropLevelLag(context: DropGearContext): number {
+  const kills = Math.max(0, context.cumulativeKills);
+  const hours = Math.max(0, context.farmedHours);
+  const progress = Math.floor(Math.log10(kills + 1) * 2 + Math.sqrt(hours) * 0.8);
+  return Math.max(4, 12 - progress);
+}
+
+function canBeAvailableFromDrops(item: EquipmentItem, slot: EquipmentSlot, base: BaseStatsForGear, context?: DropGearContext): boolean {
+  if (!context) return false;
+  const reqLevel = n(item.stats?.reqLevel);
+  const lag = dropLevelLag(context);
+  const maxDropReqLevel = Math.max(0, base.level - lag);
+  if (reqLevel > maxDropReqLevel) return false;
+
+  const requiredKills = slotDropKills(slot) + Math.max(0, reqLevel - 10) * (slot === 'Weapon' ? 110 : 65);
+  if (context.cumulativeKills < requiredKills) return false;
+  return true;
+}
+
 function scoreItem(item: EquipmentItem, jobKey: JobKey, mode: GearSourceMode): number {
   const s: EquipmentStats = item.stats ?? {};
   const price = Math.max(0, item.price ?? 0);
@@ -229,27 +262,7 @@ function priceForMode(item: EquipmentItem, mode: GearSourceMode): number {
   return price;
 }
 
-export function chooseBestGearLoadout(
-  items: EquipmentItem[],
-  jobKey: JobKey,
-  base: BaseStatsForGear,
-  mode: GearSourceMode,
-): GearLoadout {
-  if (mode === 'none') return emptyLoadout();
-
-  const chosen: Partial<Record<EquipmentSlot, EquipmentItem>> = {};
-  const slots: EquipmentSlot[] = ['Weapon', 'Shield', 'Hat', 'Overall', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Earrings'];
-  const validItems = items.filter(isValidPlayerEquipment);
-
-  for (const slot of slots) {
-    const candidates = validItems
-      .filter((item) => slotOf(item) === slot)
-      .filter((item) => meetsRequirements(item, base, jobKey))
-      .filter((item) => priceForMode(item, mode) <= base.meso)
-      .sort((a, b) => scoreItem(b, jobKey, mode) - scoreItem(a, jobKey, mode));
-    if (candidates[0]) chosen[slot] = candidates[0];
-  }
-
+function buildLoadout(chosen: Partial<Record<EquipmentSlot, EquipmentItem>>, mode: GearSourceMode): GearLoadout {
   if (chosen.Overall) {
     delete chosen.Top;
     delete chosen.Bottom;
@@ -273,15 +286,59 @@ export function chooseBestGearLoadout(
   return { equipped: chosen, bonuses, totalPrice, summary };
 }
 
+export function chooseBestGearLoadout(
+  items: EquipmentItem[],
+  jobKey: JobKey,
+  base: BaseStatsForGear,
+  mode: GearSourceMode,
+  dropContext?: DropGearContext,
+): GearLoadout {
+  if (mode === 'none') return emptyLoadout();
+
+  const chosen: Partial<Record<EquipmentSlot, EquipmentItem>> = { ...(dropContext?.previousLoadout?.equipped ?? {}) };
+  const slots: EquipmentSlot[] = ['Weapon', 'Shield', 'Hat', 'Overall', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Earrings'];
+  const validItems = items.filter(isValidPlayerEquipment);
+
+  for (const slot of slots) {
+    const candidates = validItems
+      .filter((item) => slotOf(item) === slot)
+      .filter((item) => meetsRequirements(item, base, jobKey))
+      .filter((item) => mode !== 'drop' || canBeAvailableFromDrops(item, slot, base, dropContext))
+      .filter((item) => priceForMode(item, mode) <= base.meso)
+      .sort((a, b) => scoreItem(b, jobKey, mode) - scoreItem(a, jobKey, mode));
+    if (!candidates[0]) continue;
+
+    const current = chosen[slot];
+    if (!current || scoreItem(candidates[0], jobKey, mode) > scoreItem(current, jobKey, mode) * 1.08) {
+      chosen[slot] = candidates[0];
+    }
+  }
+
+  return buildLoadout(chosen, mode);
+}
+
 export function decideGear(
   items: EquipmentItem[],
   jobKey: JobKey,
   base: BaseStatsForGear,
   mode: GearSourceMode,
+  dropContext?: DropGearContext,
 ): GearDecisionResult {
-  const loadout = chooseBestGearLoadout(items, jobKey, base, mode);
+  const loadout = chooseBestGearLoadout(items, jobKey, base, mode, dropContext);
   if (mode === 'none') return { loadout, cost: 0, text: '装备策略：不主动购买装备' };
-  if (loadout.totalPrice <= 0) return { loadout, cost: 0, text: `装备来源 ${mode}：使用免费/掉落可用装备；${loadout.summary}` };
+
+  if (mode === 'drop') {
+    const lag = dropContext ? dropLevelLag(dropContext) : 12;
+    const kills = Math.round(dropContext?.cumulativeKills ?? 0).toLocaleString();
+    const hours = Math.round((dropContext?.farmedHours ?? 0) * 10) / 10;
+    return {
+      loadout,
+      cost: 0,
+      text: `装备来源 drop：累计击杀 ${kills}，刷怪 ${hours} 小时，掉落装备约落后 ${lag} 级；${loadout.summary}`,
+    };
+  }
+
+  if (loadout.totalPrice <= 0) return { loadout, cost: 0, text: `装备来源 ${mode}：使用免费/可用装备；${loadout.summary}` };
   if (loadout.totalPrice > base.meso) return { loadout: emptyLoadout(), cost: 0, text: `金币不足，暂不换装` };
   return { loadout, cost: loadout.totalPrice, text: `装备来源 ${mode}：换装成本 ${loadout.totalPrice.toLocaleString()}；${loadout.summary}` };
 }
