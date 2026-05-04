@@ -8,7 +8,7 @@ import './sandbox.css';
 
 const objectiveLabels: Record<ObjectivePreset, string> = {
   fastest: '最快冲级',
-  poor_start: '穷鬼开荒',
+  poor_start: '新服穷鬼开荒',
   low_death: '低死亡',
   low_potion: '少买药',
   shop_gear: '全商店装备',
@@ -16,6 +16,8 @@ const objectiveLabels: Record<ObjectivePreset, string> = {
   drop_only: '全怪物掉落',
   comfort: '爽玩综合',
 };
+
+const newServerObjectiveOptions: ObjectivePreset[] = ['poor_start'];
 
 const rlLabels: Record<RlAlgorithm, string> = {
   dqn_lite: 'DQN-lite / Q-learning',
@@ -103,21 +105,23 @@ function Bar({ label, value, className = '' }: { label: string; value: number; c
 }
 
 function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolicy: (objective: ObjectivePreset) => void }) {
-  const qRows = Object.entries(report.qValues).sort((a, b) => b[1] - a[1]) as [ObjectivePreset, number][];
+  const qRows = Object.entries(report.qValues)
+    .filter(([action]) => action === 'poor_start')
+    .sort((a, b) => b[1] - a[1]) as [ObjectivePreset, number][];
   return (
     <div className="rl-panel">
-      <div className="section-title">RL 训练结果</div>
+      <div className="section-title">新服穷鬼开荒训练结果</div>
       <div className="sandbox-findings">
         <div className="finding optimization">
-          <strong>学到的策略</strong>
-          <p>{objectiveLabels[report.bestObjective]}，奖励 {report.bestReward}，状态 {report.stateKey}</p>
+          <strong>固定策略</strong>
+          <p>新服默认按“穷鬼开荒”跑：优先不买装备、保留金币、压低药耗和死亡风险。</p>
         </div>
         <div className="finding warning">
           <strong>算法说明</strong>
           <p>{report.note}</p>
         </div>
       </div>
-      <button className="secondary" onClick={() => onUsePolicy(report.bestObjective)}>用 RL 学到的策略跑沙盒</button>
+      <button className="secondary" onClick={() => onUsePolicy('poor_start')}>用新服穷鬼开荒跑沙盒</button>
       <div className="sandbox-table-wrap">
         <table>
           <thead><tr><th>策略动作</th><th>Q 值</th></tr></thead>
@@ -134,7 +138,7 @@ function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolic
             <tr><th>Episode</th><th>探索率</th><th>动作</th><th>奖励</th><th>Q值</th><th>耗时</th><th>金币</th><th>死亡</th><th>舒适度</th></tr>
           </thead>
           <tbody>
-            {report.history.slice(-30).map((row) => (
+            {report.history.filter((row) => row.action === 'poor_start').slice(-30).map((row) => (
               <tr key={row.episode}>
                 <td>{row.episode}</td>
                 <td>{row.epsilon}</td>
@@ -226,7 +230,7 @@ function AlternativesTable({ result }: { result: SandboxRunResult }) {
 }
 
 export function SandboxPanel({ data, input }: { data: GameData; input: SimulationInput }) {
-  const [objective, setObjective] = useState<ObjectivePreset>('comfort');
+  const [objective, setObjective] = useState<ObjectivePreset>('poor_start');
   const [result, setResult] = useState<SandboxRunResult | null>(null);
   const [rlAlgorithm, setRlAlgorithm] = useState<RlAlgorithm>('dqn_lite');
   const [episodes, setEpisodes] = useState(24);
@@ -256,7 +260,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
     return () => window.clearInterval(timer);
   }, [playing, result, speed]);
 
-  const run = (overrideObjective = objective) => {
+  const run = (overrideObjective: ObjectivePreset = 'poor_start') => {
     const sandbox = runSandboxSimulation(data, input.jobKey, input.startLevel, Math.max(input.startLevel + 1, input.targetLevel), overrideObjective);
     setObjective(overrideObjective);
     setResult(sandbox);
@@ -266,7 +270,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
   };
 
   const train = () => {
-    const report = runRlTraining(data, input, rlAlgorithm, objective, episodes);
+    const report = runRlTraining(data, input, rlAlgorithm, 'poor_start', episodes);
     setRlReport(report);
   };
 
@@ -280,19 +284,19 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
     <div className="sandbox-panel">
       <div className="sandbox-header">
         <div>
-          <div className="section-title">AI 沙盒模拟器</div>
-          <p>先用 RL 训练层反复试跑策略，再用学到的目标函数生成逐级沙盒回放。</p>
+          <div className="section-title">新服穷鬼开荒沙盒</div>
+          <p>新服务器默认没有启动资金，所以这里固定按“穷鬼开荒”目标跑：不乱买装备、优先保留金币、控制药耗和死亡。</p>
         </div>
         <div className="sandbox-controls">
-          <label>目标函数<select value={objective} onChange={(event) => setObjective(event.target.value as ObjectivePreset)}>{Object.entries(objectiveLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+          <label>目标函数<select value={objective} onChange={(event) => setObjective(event.target.value as ObjectivePreset)}>{newServerObjectiveOptions.map((key) => <option key={key} value={key}>{objectiveLabels[key]}</option>)}</select></label>
           <label>RL 算法<select value={rlAlgorithm} onChange={(event) => setRlAlgorithm(event.target.value as RlAlgorithm)}>{Object.entries(rlLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
           <label>Episodes<input type="number" min={1} max={300} value={episodes} onChange={(event) => setEpisodes(Number(event.target.value))} /></label>
-          <button onClick={train}>训练 AI 小人</button>
-          <button onClick={() => run()}>运行沙盒</button>
+          <button onClick={train}>训练新服穷鬼 AI</button>
+          <button onClick={() => run('poor_start')}>运行穷鬼沙盒</button>
         </div>
       </div>
 
-      {rlReport ? <RlPanel report={rlReport} onUsePolicy={(obj) => run(obj)} /> : null}
+      {rlReport ? <RlPanel report={rlReport} onUsePolicy={() => run('poor_start')} /> : null}
 
       {result && currentFrame ? (
         <>
@@ -323,7 +327,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
           <AlternativesTable result={result} />
         </>
       ) : (
-        <div className="sandbox-empty">先点击“训练 AI 小人”学习策略，或者直接点击“运行沙盒”。</div>
+        <div className="sandbox-empty">点击“训练新服穷鬼 AI”或直接点击“运行穷鬼沙盒”。</div>
       )}
     </div>
   );
