@@ -18,5 +18,8 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": ["src/simulator/allocation.ts"]
+  "exclude": [
+    "src/simulator/allocation.ts",
+    "src/simulator/allocation2.ts"
+  ]
 }
