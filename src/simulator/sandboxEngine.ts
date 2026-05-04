@@ -56,6 +56,13 @@ function pushFrame(frames: SandboxFrame[], frame: Omit<SandboxFrame, 'frame'>) {
   frames.push({ frame: frames.length + 1, ...frame });
 }
 
+function formatHitBreakdown(decision: BuildExperimentResult['decisions'][number]): string {
+  if (!decision.hitBreakdown?.length) return '—';
+  return decision.hitBreakdown
+    .map((item) => `${item.monsterName}: ${(item.hitRate * 100).toFixed(1)}% (Lv.${item.monsterLevel}, avoid ${item.monsterAvoid}${item.avoidEstimated ? ' est.' : ''}, count ${item.count}, weight ${(item.weight * 100).toFixed(0)}%)`)
+    .join('<br>');
+}
+
 function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
   const frames: SandboxFrame[] = [];
   let virtualMinute = 0;
@@ -111,7 +118,7 @@ function buildFrames(best: BuildExperimentResult): SandboxFrame[] {
         meso: Math.round(meso),
         kills,
         deaths,
-        caption: `${decision.mapName} 打 ${decision.monsterNames.slice(0, 2).join(' / ')}，MeowDB 命中率 ${(decision.hitRate * 100).toFixed(1)}%，舒适度 ${decision.comfort.toFixed(1)}。${skillNote}`,
+        caption: `${decision.mapName} 打 ${decision.monsterNames.slice(0, 2).join(' / ')}，加权命中 ${(decision.hitRate * 100).toFixed(1)}%，舒适度 ${decision.comfort.toFixed(1)}。${skillNote}`,
       });
     }
 
@@ -211,12 +218,12 @@ function buildFindings(best: BuildExperimentResult, alternatives: BuildExperimen
     });
   }
 
-  const lowHitLevels = best.decisions.filter((x) => x.hitRate < 0.8).slice(0, 3);
+  const lowHitLevels = best.decisions.filter((x) => x.hitRate < 0.8 || x.hitBreakdown?.some((mob) => mob.hitRate < 0.65)).slice(0, 3);
   if (lowHitLevels.length) {
     findings.push({
       type: 'optimization',
       title: '命中不足等级段',
-      detail: lowHitLevels.map((x) => `Lv.${x.level} ${x.mapName} 命中 ${(x.hitRate * 100).toFixed(1)}%`).join('；'),
+      detail: lowHitLevels.map((x) => `Lv.${x.level} ${x.mapName} 加权命中 ${(x.hitRate * 100).toFixed(1)}%`).join('；'),
     });
   }
 
@@ -249,10 +256,10 @@ function buildReport(best: BuildExperimentResult, alternatives: BuildExperimentR
     lines.push(`| ${index + 1} | ${item.candidate.label} | ${item.objectiveScore} | ${formatHours(item.totalHours)} | ${formatMeso(item.endingMeso)} | ${formatMeso(item.totalPotionCost)} | ${formatMeso(item.totalGearCost)} | ${item.expectedDeaths} | ${item.comfortScore} |`);
   });
 
-  lines.push('', '## 最优路线逐级决策', '| 等级 | 地图 | 怪物 | 时间 | EXP/h | MeowDB命中 | 药耗/MP | 死亡期望 | SP 决策 | 原因 |', '|---:|---|---|---:|---:|---:|---:|---:|---|---|');
+  lines.push('', '## 最优路线逐级决策', '| 等级 | 地图 | 怪物 | 时间 | EXP/h | 加权命中 | 单怪命中 breakdown | 药耗/MP | 死亡期望 | SP 决策 | 原因 |', '|---:|---|---|---:|---:|---:|---|---:|---:|---|---|');
 
   for (const decision of best.decisions) {
-    lines.push(`| Lv.${decision.level} | ${decision.mapName} | ${decision.monsterNames.join(', ')} | ${formatHours(decision.hours)} | ${Math.round(decision.expPerHour).toLocaleString()} | ${(decision.hitRate * 100).toFixed(1)}% | ${formatMeso(decision.potionCost)} | ${decision.deathsExpected.toFixed(2)} | ${(decision.spDecisions ?? []).join('<br>') || '—'} | ${decision.reason} |`);
+    lines.push(`| Lv.${decision.level} | ${decision.mapName} | ${decision.monsterNames.join(', ')} | ${formatHours(decision.hours)} | ${Math.round(decision.expPerHour).toLocaleString()} | ${(decision.hitRate * 100).toFixed(1)}% | ${formatHitBreakdown(decision)} | ${formatMeso(decision.potionCost)} | ${decision.deathsExpected.toFixed(2)} | ${(decision.spDecisions ?? []).join('<br>') || '—'} | ${decision.reason} |`);
   }
 
   return lines.join('\n');
