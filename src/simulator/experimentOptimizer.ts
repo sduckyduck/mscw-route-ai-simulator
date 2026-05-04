@@ -82,6 +82,10 @@ function round(value: number, digits = 2): number {
   return Math.round(value * factor) / factor;
 }
 
+function lastOrUndefined<T>(values: T[]): T | undefined {
+  return values.length ? values[values.length - 1] : undefined;
+}
+
 function makeCandidates(objective: ObjectivePreset): BuildCandidate[] {
   const base: BuildCandidate[] = [
     { id: 'fast-low-shop', label: '快冲低 DEX 商店武器', dexPolicy: 'low', gearSource: 'shop', potionPolicy: 'normal', routeRisk: 'greedy', strategy: 'fastest' },
@@ -169,7 +173,7 @@ function upgradeWeapon(stats: InternalStats, level: number, candidate: BuildCand
     { level: 40, watk: 60, cost: 9500 },
     { level: 50, watk: 70, cost: 13500 },
   ];
-  const target = shopProgression.filter((x) => x.level <= level && x.watk > stats.weaponAttack).at(-1);
+  const target = lastOrUndefined(shopProgression.filter((x) => x.level <= level && x.watk > stats.weaponAttack));
   if (!target) return 0;
 
   let cost = target.cost;
