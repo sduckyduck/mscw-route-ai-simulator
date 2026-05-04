@@ -3,7 +3,7 @@ import { loadGameData } from './simulator/data';
 import { JOB_OPTIONS } from './simulator/jobs';
 import { routeToMarkdown, formatHours, formatMeso } from './simulator/report';
 import { simulateRoute } from './simulator/optimizer';
-import type { GameData, JobKey, SimulationInput, SimulationResult, Strategy } from './simulator/types';
+import type { CharacterStats, GameData, JobKey, SimulationInput, SimulationResult, Strategy } from './simulator/types';
 
 const DEFAULT_INPUT: SimulationInput = {
   jobKey: 'spearman',
@@ -28,6 +28,22 @@ function updateNumber(value: string, fallback: number, min: number, max: number)
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+function formatStatAllocation(allocation: Partial<Record<keyof CharacterStats, number>>): string {
+  const entries = Object.entries(allocation).filter(([, value]) => value && Number(value) > 0);
+  if (!entries.length) return '—';
+  return entries.map(([key, value]) => `${key.toUpperCase()} +${value}`).join(' / ');
+}
+
+function formatStats(stats: CharacterStats): string {
+  return `STR ${Math.round(stats.str)} / DEX ${Math.round(stats.dex)} / INT ${Math.round(stats.int)} / LUK ${Math.round(stats.luk)} / HP ${Math.round(stats.hp)} / MP ${Math.round(stats.mp)}`;
+}
+
+function formatStage(stage: string): string {
+  if (stage === 'first_job') return '一转';
+  if (stage === 'second_job') return '二转';
+  return '后续';
 }
 
 function SummaryCard(props: { label: string; value: string; hint?: string }) {
@@ -61,6 +77,88 @@ function BotTimeline({ result }: { result: SimulationResult }) {
             <div className="timeline-time">{formatHours(segment.hours)}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AllocationPanel({ result }: { result: SimulationResult }) {
+  const plan = result.allocationPlan;
+  const finalStats = plan.finalStats;
+  const derived = plan.finalDerived;
+  const topSkills = Object.entries(plan.finalSkills)
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8);
+
+  return (
+    <div className="allocation-panel">
+      <div className="section-title">AP / SP 智能分配策略</div>
+      <div className="allocation-summary">
+        {plan.summary.map((line) => (
+          <div key={line}>• {line}</div>
+        ))}
+      </div>
+
+      <div className="build-grid">
+        <SummaryCard
+          label="最终基础属性"
+          value={`STR ${Math.round(finalStats.str)} / DEX ${Math.round(finalStats.dex)}`}
+          hint={`INT ${Math.round(finalStats.int)} / LUK ${Math.round(finalStats.luk)} / HP ${Math.round(finalStats.hp)} / MP ${Math.round(finalStats.mp)}`}
+        />
+        <SummaryCard
+          label="最终命中 / 回避"
+          value={`${Math.round(derived.accuracy)} / ${Math.round(derived.avoid)}`}
+          hint="影响命中率、被击中率和越级图效率"
+        />
+        <SummaryCard
+          label="输出系数"
+          value={`${derived.skillMult.toFixed(2)}x`}
+          hint={`Mastery ${derived.mastery.toFixed(2)} / Crit ${(derived.critRate * 100).toFixed(1)}%`}
+        />
+        <SummaryCard
+          label="核心技能数"
+          value={`${topSkills.length}`}
+          hint={topSkills.slice(0, 3).map(([name, value]) => `${name} ${value}`).join(' / ') || 'No skills'}
+        />
+      </div>
+
+      <div className="table-wrap allocation-table">
+        <table>
+          <thead>
+            <tr>
+              <th>等级</th>
+              <th>阶段</th>
+              <th>AP 分配</th>
+              <th>当前属性</th>
+              <th>SP 分配</th>
+              <th>核心技能</th>
+              <th>原因 / 说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.steps.map((step) => (
+              <tr key={`alloc-${step.level}`}>
+                <td>Lv.{step.level}</td>
+                <td>{formatStage(step.stage)}</td>
+                <td>{formatStatAllocation(step.apAllocated)}</td>
+                <td>{formatStats(step.statsAfter)}</td>
+                <td>
+                  {step.spAllocated.length ? (
+                    step.spAllocated.map((item) => (
+                      <div key={`${step.level}-${item.skill}`}>
+                        {item.skill} +{item.points}
+                        <small>总计 {item.total}</small>
+                      </div>
+                    ))
+                  ) : '—'}
+                </td>
+                <td>{step.keySkills.join(' / ') || '—'}</td>
+                <td>{step.spAllocated[0]?.reason ?? step.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -150,12 +248,12 @@ export default function App() {
           <p className="eyebrow">MapleStory Classic World</p>
           <h1>开荒路线 AI 模拟训练机器人</h1>
           <p className="subtitle">
-            基于 zip 里的怪物、地图、传送门和装备资料，自动估算不同职业从 Lv.X 到 Lv.Y 的刷怪路线、耗时、药耗和收益。
+            基于 zip 里的怪物、地图、传送门、AP/SP 分配和职业技能，自动估算不同职业从 Lv.X 到 Lv.Y 的刷怪路线、耗时、药耗和收益。
           </p>
         </div>
         <div className="hero-badge">
           <span>AI BOT</span>
-          <strong>路线搜索 v0.1</strong>
+          <strong>路线搜索 v0.3</strong>
         </div>
       </header>
 
@@ -275,6 +373,7 @@ export default function App() {
               ) : null}
 
               <BotTimeline result={result} />
+              <AllocationPanel result={result} />
               <RouteTable result={result} />
 
               <div className="actions">
