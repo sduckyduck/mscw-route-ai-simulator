@@ -10,7 +10,7 @@
 - 预计净金币/材料价值
 - 跑图成本和风险评分
 
-> 当前版本是 v0.1：规则模型 + 搜索优化。它不是直接让 LLM 瞎编路线，而是先让“AI 小人”用数据跑模拟。后面可以再接 GPT/LLM 只负责解释结果、生成攻略文案。
+> 当前版本是 v0.2：准确 Lv.1–51 EXP 表 + 公式化战斗模型 + 路线搜索优化。它不是直接让 LLM 瞎编路线，而是先让“AI 小人”用数据跑模拟。后面可以再接 GPT/LLM 只负责解释结果、生成攻略文案。
 
 ## 项目结构
 
@@ -20,11 +20,12 @@ mscw-route-ai-simulator/
 ├─ scripts/import_metadata.py  # 后续更新 zip 数据用
 ├─ src/simulator/              # 核心模拟器
 │  ├─ data.ts                  # 读取并整理怪物/地图/传送门
-│  ├─ combat.ts                # 职业战斗效率、药耗、风险估算
+│  ├─ combat.ts                # 每击伤害、命中、药耗、风险估算
+│  ├─ damageFormula.ts         # 物理/魔法伤害公式、防御、等级差、暴击、命中近似
 │  ├─ optimizer.ts             # 路线搜索与等级段合并
 │  ├─ jobs.ts                  # 各职业参数
 │  ├─ travel.ts                # 地图连接/跑图成本
-│  └─ expTable.ts              # 经验表，后续建议替换为准确表
+│  └─ expTable.ts              # Lv.1–51 准确经验表 + 高等级外推
 ├─ src/App.tsx                 # 前端交互界面
 └─ vite.config.ts              # Cloudflare Pages 使用 base: '/'
 ```
@@ -56,25 +57,6 @@ python scripts/import_metadata.py "D:/你的路径/cbt-patch.zip"
 public/data/app_metadata/
 ```
 
-## 创建 GitHub Repo
-
-推荐新建 repo 名：
-
-```text
-mscw-route-ai-simulator
-```
-
-然后本地执行：
-
-```bash
-git init
-git add .
-git commit -m "Initial AI route simulator"
-git branch -M main
-git remote add origin https://github.com/sduckyduck/mscw-route-ai-simulator.git
-git push -u origin main
-```
-
 ## 部署到 Cloudflare Pages
 
 Cloudflare Pages 设置：
@@ -100,17 +82,49 @@ base: '/'
 
 模拟器读取：
 
-- `monsters.json`：怪物等级、HP、EXP、伤害、所在地图、数量
+- `monsters.json`：怪物等级、HP、EXP、伤害、物防、魔防、命中、回避、所在地图、数量
 - `maps.json`：地图名称、区域、是否城镇
 - `portals.json`：地图连接关系，用来估算跑图成本
 
 每张有怪的非城镇地图会变成一个 `TrainingSpot`。
 
-### 2. 职业差异
+### 2. EXP 表
+
+Lv.1–51 使用你提供的 CBT 经验表，来源说明：
+
+```text
+Experience Table
+Reverse engineered by @wolffy on Discord
+```
+
+`expToNextLevel(level)` 返回当前等级升到下一级所需经验。`accumulatedExpAtLevel(level)` 返回到达该等级的累计经验。
+
+Lv.51 之后当前使用外推曲线，前端/模拟结果会提示 warning。等你拿到更高等级准确表之后，只需要继续补 `src/simulator/expTable.ts`。
+
+### 3. 战斗公式
+
+`damageFormula.ts` 目前包含：
+
+- 物理伤害 MIN/MAX
+- 魔法伤害 MIN/MAX
+- Weapon Min/Max multipliers
+- 防御削减：`Damage × 100 / (Defense + 100)`
+- 元素倍率：immune / resistant / neutral / weak 的结构已预留
+- 等级差惩罚：只在怪物等级高于玩家时生效
+- 基础暴击：5% crit rate，20% crit damage
+- Iron Arrow falloff 结构后续可加，目前未接技能多目标细节
+- Damage clamp：1 到 700,000,000,000
+
+命中/回避部分目前是可调近似，因为你给的资料里还没有最终准确 ACC/EVA 公式。代码已经把它独立封装成 `estimateHitChance()`，后面拿到真实公式可以直接替换，不影响路线搜索逻辑。
+
+### 4. 职业差异
 
 每个职业有独立参数：
 
-- DPS 成长
+- 主属性/副属性估算
+- 武器类型和 weapon multiplier
+- 技能倍率/魔法技能伤害估算
+- 攻击间隔
 - 攻击距离
 - 群攻能力
 - 机动性
@@ -121,7 +135,7 @@ base: '/'
 
 所以同一张图对枪战士、牧师、刺客、弓箭手的评分会不同。
 
-### 3. 路线策略
+### 5. 路线策略
 
 目前有四种：
 
@@ -130,7 +144,7 @@ base: '/'
 - 低药耗安全：风险和药耗惩罚更高
 - 赚钱/材料优先：净金币和材料价值权重更高
 
-### 4. 为什么不是直接照搬攻略
+### 6. 为什么不是直接照搬攻略
 
 传统攻略通常是固定路线：1-10 某图，10-20 某图。这个项目会根据职业参数、怪物数据、地图密度、药耗、等级差、跑图成本重新计算。以后你补充掉落表、任务 EXP、装备升级后，同一个职业路线也会自动变化。
 
@@ -138,11 +152,12 @@ base: '/'
 
 ### 必做
 
-1. 替换准确 EXP 表。
+1. 补 Lv.52+ 准确 EXP 表。
 2. 把真实药水价格、MP/HP 消耗接进模型。
 3. 从 items/crafting/drop 数据里建立材料价值表。
-4. 给法师加入属性克制；给牧师加入 undead 加权。
+4. 给法师加入真实属性克制；给牧师加入 undead 加权。
 5. 加入任务路线，不只刷怪。
+6. 用实测击杀时间校准 `damageFormula.ts` 里的 physical/magic calibration。
 
 ### 进阶
 
