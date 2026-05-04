@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { runSandboxSimulation, type SandboxFrame, type SandboxRunResult } from './simulator/sandboxEngine';
 import type { ObjectivePreset } from './simulator/experimentOptimizer2';
 import { runRlTraining, type RlAlgorithm, type RlTrainingReport } from './simulator/rlTrainer';
+import { trainTensorFlowDqn, type TfAction, type TfTrainingReport } from './simulator/tfTrainer';
 import type { GameData, SimulationInput } from './simulator/types';
 import { formatHours, formatMeso } from './simulator/report';
 import './sandbox.css';
@@ -23,6 +24,13 @@ const rlLabels: Record<RlAlgorithm, string> = {
   dqn_lite: 'DQN-lite / Q-learning',
   ppo_stub: 'PPO 接口',
   dreamer_stub: 'Dreamer 接口',
+};
+
+const tfActionLabels: Record<TfAction, string> = {
+  poor_start: '新服穷鬼开荒',
+  low_potion: '少买药',
+  drop_only: '全怪物掉落',
+  comfort: '爽玩综合',
 };
 
 function actionText(action: SandboxFrame['action']): string {
@@ -110,7 +118,7 @@ function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolic
     .sort((a, b) => b[1] - a[1]) as [ObjectivePreset, number][];
   return (
     <div className="rl-panel">
-      <div className="section-title">新服穷鬼开荒训练结果</div>
+      <div className="section-title">轻量 Q-learning 训练结果</div>
       <div className="sandbox-findings">
         <div className="finding optimization">
           <strong>固定策略</strong>
@@ -148,6 +156,64 @@ function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolic
                 <td>{formatHours(row.totalHours)}</td>
                 <td>{formatMeso(row.endingMeso)}</td>
                 <td>{row.expectedDeaths}</td>
+                <td>{row.comfort}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TfPanel({ report, onUsePolicy }: { report: TfTrainingReport; onUsePolicy: (action: TfAction) => void }) {
+  const qRows = Object.entries(report.qValues).sort((a, b) => b[1] - a[1]) as [TfAction, number][];
+  return (
+    <div className="rl-panel">
+      <div className="section-title">TensorFlow.js DQN 神经网络训练结果</div>
+      <div className="sandbox-findings">
+        <div className="finding optimization">
+          <strong>神经网络学到的动作</strong>
+          <p>{tfActionLabels[report.bestAction]}，奖励 {report.bestReward}，状态 {report.stateKey}</p>
+        </div>
+        <div className="finding success">
+          <strong>训练说明</strong>
+          <p>{report.explanation}</p>
+        </div>
+      </div>
+      <button className="secondary" onClick={() => onUsePolicy(report.bestAction)}>用 TensorFlow 学到的策略跑沙盒</button>
+      <div className="sandbox-table-wrap">
+        <table>
+          <thead><tr><th>动作</th><th>神经网络预测 Q 值</th></tr></thead>
+          <tbody>
+            {qRows.map(([action, value]) => (
+              <tr key={action} className={action === report.bestAction ? 'best-row' : ''}>
+                <td>{tfActionLabels[action]}</td>
+                <td>{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="sandbox-table-wrap">
+        <table>
+          <thead>
+            <tr><th>Episode</th><th>探索率</th><th>动作</th><th>奖励</th><th>Loss</th><th>预测Q</th><th>耗时</th><th>金币</th><th>药耗</th><th>装备</th><th>死亡</th><th>舒适度</th></tr>
+          </thead>
+          <tbody>
+            {report.history.slice(-40).map((row) => (
+              <tr key={row.episode}>
+                <td>{row.episode}</td>
+                <td>{row.epsilon}</td>
+                <td>{tfActionLabels[row.action]}</td>
+                <td>{row.reward}</td>
+                <td>{row.loss}</td>
+                <td>{row.predictedQ}</td>
+                <td>{formatHours(row.totalHours)}</td>
+                <td>{formatMeso(row.endingMeso)}</td>
+                <td>{formatMeso(row.potionCost)}</td>
+                <td>{formatMeso(row.gearCost)}</td>
+                <td>{row.deaths}</td>
                 <td>{row.comfort}</td>
               </tr>
             ))}
@@ -235,6 +301,9 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
   const [rlAlgorithm, setRlAlgorithm] = useState<RlAlgorithm>('dqn_lite');
   const [episodes, setEpisodes] = useState(24);
   const [rlReport, setRlReport] = useState<RlTrainingReport | null>(null);
+  const [tfReport, setTfReport] = useState<TfTrainingReport | null>(null);
+  const [tfTraining, setTfTraining] = useState(false);
+  const [tfError, setTfError] = useState<string | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(2);
@@ -274,6 +343,19 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
     setRlReport(report);
   };
 
+  const trainTf = async () => {
+    setTfTraining(true);
+    setTfError(null);
+    try {
+      const report = await trainTensorFlowDqn(data, input, episodes);
+      setTfReport(report);
+    } catch (error) {
+      setTfError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTfTraining(false);
+    }
+  };
+
   const copyReport = async () => {
     if (!result) return;
     await navigator.clipboard.writeText(result.reportMarkdown);
@@ -290,12 +372,15 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
         <div className="sandbox-controls">
           <label>目标函数<select value={objective} onChange={(event) => setObjective(event.target.value as ObjectivePreset)}>{newServerObjectiveOptions.map((key) => <option key={key} value={key}>{objectiveLabels[key]}</option>)}</select></label>
           <label>RL 算法<select value={rlAlgorithm} onChange={(event) => setRlAlgorithm(event.target.value as RlAlgorithm)}>{Object.entries(rlLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-          <label>Episodes<input type="number" min={1} max={300} value={episodes} onChange={(event) => setEpisodes(Number(event.target.value))} /></label>
-          <button onClick={train}>训练新服穷鬼 AI</button>
+          <label>Episodes<input type="number" min={1} max={120} value={episodes} onChange={(event) => setEpisodes(Number(event.target.value))} /></label>
+          <button onClick={train}>训练轻量 Q-learning</button>
+          <button onClick={trainTf} disabled={tfTraining}>{tfTraining ? 'TensorFlow 训练中...' : 'TensorFlow.js 训练穷鬼 AI'}</button>
           <button onClick={() => run('poor_start')}>运行穷鬼沙盒</button>
         </div>
       </div>
 
+      {tfError ? <div className="error">TensorFlow.js 训练失败：{tfError}</div> : null}
+      {tfReport ? <TfPanel report={tfReport} onUsePolicy={(action) => run(action as ObjectivePreset)} /> : null}
       {rlReport ? <RlPanel report={rlReport} onUsePolicy={() => run('poor_start')} /> : null}
 
       {result && currentFrame ? (
@@ -327,7 +412,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
           <AlternativesTable result={result} />
         </>
       ) : (
-        <div className="sandbox-empty">点击“训练新服穷鬼 AI”或直接点击“运行穷鬼沙盒”。</div>
+        <div className="sandbox-empty">点击“TensorFlow.js 训练穷鬼 AI”或直接点击“运行穷鬼沙盒”。</div>
       )}
     </div>
   );
