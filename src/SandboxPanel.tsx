@@ -154,6 +154,24 @@ function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolic
   );
 }
 
+type LevelDecisionForUi = SandboxRunResult['best']['decisions'][number];
+
+function HitBreakdownCell({ decision }: { decision: LevelDecisionForUi }) {
+  if (!decision.hitBreakdown?.length) return <>—</>;
+  return (
+    <div className="hit-breakdown-list">
+      {decision.hitBreakdown.map((item) => (
+        <div key={`${decision.level}-${item.monsterName}-${item.monsterLevel}`} className={item.hitRate < 0.75 ? 'hit-low' : 'hit-ok'}>
+          <strong>{item.monsterName}</strong>: {(item.hitRate * 100).toFixed(1)}%
+          <small>
+            Lv.{item.monsterLevel} / avoid {item.monsterAvoid}{item.avoidEstimated ? ' est.' : ''} / count {item.count} / weight {(item.weight * 100).toFixed(0)}%
+          </small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DecisionLog({ result }: { result: SandboxRunResult }) {
   return (
     <div className="sandbox-table-wrap decision-log">
@@ -161,7 +179,7 @@ function DecisionLog({ result }: { result: SandboxRunResult }) {
       <table>
         <thead>
           <tr>
-            <th>等级</th><th>AP 决策</th><th>SP 决策</th><th>装备决策</th><th>地图 / 怪物</th><th>命中</th><th>本级耗时</th><th>药耗/MP</th><th>死亡期望</th><th>当前属性</th><th>原因</th>
+            <th>等级</th><th>AP 决策</th><th>SP 决策</th><th>装备决策</th><th>地图 / 怪物</th><th>加权命中</th><th>单怪命中 breakdown</th><th>本级耗时</th><th>药耗/MP</th><th>死亡期望</th><th>当前属性</th><th>原因</th>
           </tr>
         </thead>
         <tbody>
@@ -173,6 +191,7 @@ function DecisionLog({ result }: { result: SandboxRunResult }) {
               <td>{decision.gearDecision}</td>
               <td><strong>{decision.mapName}</strong><br />{decision.monsterNames.join(' / ')}</td>
               <td>{(decision.hitRate * 100).toFixed(1)}%</td>
+              <td><HitBreakdownCell decision={decision} /></td>
               <td>{formatHours(decision.hours)}</td>
               <td>{formatMeso(decision.potionCost)}</td>
               <td>{decision.deathsExpected.toFixed(2)}</td>
