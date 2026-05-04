@@ -104,7 +104,7 @@ function createModel(): tf.Sequential {
 function argMax(values: number[]): number {
   let best = 0;
   for (let i = 1; i < values.length; i += 1) {
-    if (values[i] > values[best]) best = i;
+    if ((values[i] ?? Number.NEGATIVE_INFINITY) > (values[best] ?? Number.NEGATIVE_INFINITY)) best = i;
   }
   return best;
 }
@@ -114,7 +114,8 @@ async function predictQ(model: tf.Sequential, state: number[]): Promise<number[]
     const xs = tf.tensor2d([state]);
     return model.predict(xs) as tf.Tensor;
   });
-  const values = Array.from(await q.data());
+  const rawValues = await q.data();
+  const values = Array.from(rawValues, (value) => Number(value));
   q.dispose();
   return values;
 }
