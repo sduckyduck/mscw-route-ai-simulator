@@ -32,7 +32,6 @@ export const WEAPON_MULTIPLIERS: Record<WeaponType, WeaponMultiplier> = {
   Crossbow: { swing: 2.5, stab: 2.5 },
   Claw: { swing: 2.5, stab: 2.5 },
   Dagger: { swing: 1, stab: 2 },
-  // Pirate values are placeholders until the CBT/China-server formula is confirmed.
   Knuckle: { swing: 2.5, stab: 2.5 },
   Gun: { swing: 2.5, stab: 2.5 },
 };
@@ -85,6 +84,16 @@ export interface HitChanceInput {
   monsterLevel: number;
   accuracy: number;
   avoid: number;
+}
+
+export interface AccuracyTargets {
+  minToHit: number;
+  hit25: number;
+  hit50: number;
+  hit75: number;
+  hit90: number;
+  hit95: number;
+  hit100: number;
 }
 
 export const BASE_CRIT_RATE = 0.05;
@@ -151,8 +160,6 @@ export function magicDamageRange(input: MagicDamageInput): DamageRange {
     (input.skillDamage + input.magicAttack / 7) * ((input.magicAttack * 2 * input.mastery + input.int) / 100 + 1);
 
   return finalizeRange(rawMin, rawMax, {
-    // Magic defense reduction is still WIP in the source formula. We keep it in the model so
-    // high-MDEF monsters are penalized, but this coefficient should be tuned with test data.
     defense: input.magicDefense,
     elementalMult: input.elementalMult,
     levelDiff: input.levelDiff,
@@ -199,13 +206,56 @@ function finalizeRange(
   };
 }
 
-export function estimateHitChance(input: HitChanceInput): number {
-  const avoid = Math.max(0, input.avoid);
-  const levelGap = Math.max(0, input.monsterLevel - input.playerLevel);
+export function statDerivedAccuracy(dex: number, luk: number, weaponType?: WeaponType): number {
+  if (weaponType === 'Bow' || weaponType === 'Crossbow') return Math.floor(dex / 3);
+  if (weaponType === 'Claw') return Math.floor(dex + Math.floor(luk / 10));
+  return Math.floor(dex / 3) + Math.floor(luk / 6);
+}
 
-  // Exact ACC/EVA formula is not confirmed in the supplied notes, so this is intentionally
-  // isolated as a tunable approximation. It uses monster avoid and an extra penalty when the
-  // monster is above the player level.
-  const requiredAccuracy = 32 + avoid * 3.8 + levelGap * 11;
-  return clamp(input.accuracy / Math.max(1, requiredAccuracy), 0.08, 1);
+export function meowDbPhysicalHitChance(input: HitChanceInput): number {
+  const avoid = Math.max(0, input.avoid);
+  if (avoid <= 0) return 1;
+  const accuracy = Math.max(0, input.accuracy);
+  if (accuracy <= 0) return 0;
+
+  const levelGap = Math.max(0, input.monsterLevel - input.playerLevel);
+  const a = (accuracy * 100) / ((levelGap + 51) * 5);
+  if (a <= 0) return 0;
+
+  const f = 0.3 / (1 + Math.exp((a - avoid) / 12));
+  const rollMin = 0.95 - f;
+  const rollMax = 1.05 + f;
+  const neededRoll = avoid / a;
+  return clamp((rollMax - neededRoll) / (rollMax - rollMin), 0, 1);
+}
+
+export function accuracyForHitRate(playerLevel: number, monsterLevel: number, avoid: number, targetHitRate: number): number {
+  const target = clamp(targetHitRate, 0, 1);
+  if (avoid <= 0) return 0;
+  let lo = 0;
+  let hi = Math.max(20, avoid * 12 + Math.max(0, monsterLevel - playerLevel) * 20);
+
+  for (let i = 0; i < 80; i += 1) {
+    const mid = (lo + hi) / 2;
+    const hit = meowDbPhysicalHitChance({ playerLevel, monsterLevel, accuracy: mid, avoid });
+    if (hit >= target) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+}
+
+export function accuracyTargets(playerLevel: number, monsterLevel: number, avoid: number): AccuracyTargets {
+  return {
+    minToHit: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.000001),
+    hit25: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.25),
+    hit50: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.5),
+    hit75: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.75),
+    hit90: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.9),
+    hit95: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.95),
+    hit100: accuracyForHitRate(playerLevel, monsterLevel, avoid, 0.999999),
+  };
+}
+
+export function estimateHitChance(input: HitChanceInput): number {
+  return meowDbPhysicalHitChance(input);
 }
