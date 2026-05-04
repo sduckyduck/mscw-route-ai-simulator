@@ -1,4 +1,4 @@
-import { meowDbPhysicalHitChance, statDerivedAccuracy, type WeaponType } from './damageFormula';
+import { meowDbPhysicalHitChance, statDerivedAccuracy } from './damageFormula';
 import { buildTrainingSpots } from './data';
 import { expToNextLevel } from './expTable';
 import { JOB_PROFILES } from './jobs';
@@ -88,18 +88,6 @@ function baseStats(jobKey: JobKey): Stats {
   return { str: 4, dex: 30, int: 4, luk: 40, meso: 0, weaponAttack: 27 };
 }
 
-function weaponType(jobKey: JobKey): WeaponType | undefined {
-  if (jobKey === 'fighter' || jobKey === 'page') return '2H Sword';
-  if (jobKey === 'spearman') return 'Spear';
-  if (jobKey === 'hunter') return 'Bow';
-  if (jobKey === 'crossbowman') return 'Crossbow';
-  if (jobKey === 'assassin') return 'Claw';
-  if (jobKey === 'bandit') return 'Dagger';
-  if (jobKey === 'brawler') return 'Knuckle';
-  if (jobKey === 'gunslinger') return 'Gun';
-  return undefined;
-}
-
 function targetSecondary(jobKey: JobKey, level: number, policy: BuildCandidate['dexPolicy']): number {
   const family = JOB_PROFILES[jobKey].family;
   let target = family === 'warrior' ? level + 5 : family === 'magician' ? level + 3 : family === 'rogue' ? Math.floor(level * 2) : level + 5;
@@ -122,10 +110,10 @@ function allocateAp(stats: Stats, jobKey: JobKey, level: number, c: BuildCandida
   stats[primaryKey] = Number(stats[primaryKey]) + remaining;
 }
 
-function accuracy(stats: Stats, jobKey: JobKey, level: number, skillAcc = 0): number {
+function accuracy(stats: Stats, jobKey: JobKey, skillAcc = 0): number {
   const job = JOB_PROFILES[jobKey];
-  if (job.family === 'magician') return job.accuracyBase + stats.int * 0.42 + stats.luk * 0.18 + level * 0.65 + skillAcc;
-  return job.accuracyBase + statDerivedAccuracy(stats.dex, stats.luk, weaponType(jobKey)) + level * 0.65 + skillAcc;
+  if (job.family === 'magician') return 9999;
+  return statDerivedAccuracy(stats.dex, stats.luk) + skillAcc;
 }
 
 function avoid(stats: Stats, level: number, skillAvoid = 0): number {
@@ -164,10 +152,10 @@ const spForLevel = (level: number) => (level < 10 ? 0 : level === 10 || level ==
 const mesoPerKill = (level: number, exp: number, c: BuildCandidate) => level * 2.2 + exp * 0.45 + (c.gearSource === 'drop' ? level * 1.2 : c.gearSource === 'craft' ? level * 0.8 : 0);
 
 function estimateSpot(spot: TrainingSpot, level: number, jobKey: JobKey, stats: Stats, c: BuildCandidate, skill: ReturnType<typeof createSkillState>, objective: ObjectivePreset): LevelDecision {
-  const acc = accuracy(stats, jobKey, level, skill.accuracyBonus);
+  const acc = accuracy(stats, jobKey, skill.accuracyBonus);
   const avd = avoid(stats, level, skill.avoidBonus);
   const mobAvoid = spot.mobs.reduce((sum, x) => sum + (x.monster.eva ?? 0) * x.count, 0) / Math.max(1, spot.totalMobCount);
-  const hitRate = meowDbPhysicalHitChance({ playerLevel: level, monsterLevel: spot.avgLevel, accuracy: acc, avoid: mobAvoid });
+  const hitRate = JOB_PROFILES[jobKey].family === 'magician' ? 1 : meowDbPhysicalHitChance({ playerLevel: level, monsterLevel: spot.avgLevel, accuracy: acc, avoid: mobAvoid });
   const levelPenalty = spot.avgLevel > level ? 1 / (1 + (spot.avgLevel - level) * 0.08) : 1;
   const damage = (stats.weaponAttack * 2.6 + stats.str * 1.35 + stats.dex * 0.35 + stats.luk * 0.45 + stats.int * 0.25) * hitRate * levelPenalty * skill.damageMultiplier;
   const killSeconds = clamp(spot.avgHp / Math.max(1, damage) + 0.75, 0.65, 18) / skill.speedMultiplier;
@@ -250,7 +238,7 @@ export function runBuildExperiments(data: GameData, jobKey: JobKey, startLevel: 
       endingMeso: Math.round(stats.meso),
       expectedDeaths: round(expectedDeaths, 2),
       comfortScore: round(comfortScore, 1),
-      finalStats: { str: Math.round(stats.str), dex: Math.round(stats.dex), int: Math.round(stats.int), luk: Math.round(stats.luk), weaponAttack: Math.round(stats.weaponAttack), accuracy: Math.round(accuracy(stats, jobKey, targetLevel, skill.accuracyBonus)), avoid: Math.round(avoid(stats, targetLevel, skill.avoidBonus)) },
+      finalStats: { str: Math.round(stats.str), dex: Math.round(stats.dex), int: Math.round(stats.int), luk: Math.round(stats.luk), weaponAttack: Math.round(stats.weaponAttack), accuracy: Math.round(accuracy(stats, jobKey, skill.accuracyBonus)), avoid: Math.round(avoid(stats, targetLevel, skill.avoidBonus)) },
       finalSkills: { ...skill.levels },
       decisions,
       warnings,
