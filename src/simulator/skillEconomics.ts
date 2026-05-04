@@ -41,6 +41,21 @@ export interface SkillChoiceContext {
 
 export const SKILL_OPTIONS: SkillOption[] = [
   {
+    name: 'Precise Strikes',
+    jobKeys: ['fighter', 'page', 'spearman'],
+    minLevel: 10,
+    maxLevel: 15,
+    role: 'accuracy',
+    damageGain: 0,
+    accuracyGain: 1.333,
+    avoidGain: 0,
+    speedGain: 0,
+    survivalGain: 0,
+    mpCostPerUse: 0,
+    mpSavePerKill: 0,
+    reason: '战士命中技能。没有它时 ACC 只能来自 DEX/LUK 属性和装备 ACC。',
+  },
+  {
     name: 'Power Strike',
     jobKeys: ['fighter', 'page', 'spearman'],
     minLevel: 10,
@@ -182,7 +197,7 @@ export const SKILL_OPTIONS: SkillOption[] = [
     maxLevel: 20,
     role: 'mastery',
     damageGain: 0.018,
-    accuracyGain: 0.5,
+    accuracyGain: 0,
     avoidGain: 0,
     speedGain: 0,
     survivalGain: 0,
@@ -237,6 +252,7 @@ function scoreSkill(option: SkillOption, context: SkillChoiceContext): number {
 
   if (option.name === 'Arrow Blow' && poor) score += 12;
   if (option.name === 'Double Shot' && poor) score -= 10;
+  if (option.name === 'Precise Strikes' && hitDeficit > 0.05) score += 10;
   if (option.role === 'accuracy' && hitDeficit > 0.2) score += 18;
   return score;
 }
