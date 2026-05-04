@@ -1,4 +1,4 @@
-import { getBuildSnapshot } from './allocation';
+import { getBuildSnapshot } from './allocation2';
 import {
   BASE_ELEMENTAL_DAMAGE_BONUS,
   WEAPON_MULTIPLIERS,
@@ -52,9 +52,6 @@ function getWeaponType(job: JobProfile): WeaponType {
 }
 
 function estimateElementalMultiplier(job: JobProfile, _monster: Monster): number {
-  // The supplied notes confirm elemental damage was reduced from 50% to 25%.
-  // Monster weakness/resistance fields are not present in the imported Monster type yet, so this
-  // stays neutral by default and applies only a small class bias for elemental mages.
   if (job.key === 'fire_poison' || job.key === 'ice_lightning') {
     return 1 + BASE_ELEMENTAL_DAMAGE_BONUS * 0.18;
   }
@@ -122,7 +119,6 @@ function estimateFormulaDps(level: number, spot: TrainingSpot, job: JobProfile, 
 }
 
 function estimateMesoPerKill(exp: number, level: number, job: JobProfile): number {
-  // Placeholder until true drop tables are integrated: higher level mobs yield more sell value/mesos.
   return (exp * 1.25 + level * 2.8) * job.mesoFind;
 }
 
