@@ -10,6 +10,7 @@
     "import:data": "python scripts/import_metadata.py"
   },
   "dependencies": {
+    "@tensorflow/tfjs": "latest",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "typescript": "latest",
