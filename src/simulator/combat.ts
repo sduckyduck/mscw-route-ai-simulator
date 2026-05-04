@@ -1,4 +1,4 @@
-import { getBuildSnapshot } from './allocation2';
+import { getBuildSnapshot } from './allocation3';
 import {
   BASE_ELEMENTAL_DAMAGE_BONUS,
   WEAPON_MULTIPLIERS,
