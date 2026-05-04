@@ -1,4 +1,4 @@
-import type { GameData, MapInfo, Monster, PortalRef, TrainingSpot } from './types';
+import type { EquipmentItem, GameData, MapInfo, Monster, PortalRef, TrainingSpot } from './types';
 
 const DATA_ROOT = '/data/app_metadata';
 
@@ -17,15 +17,31 @@ interface MapPayload {
   total?: number;
 }
 
+interface ItemPayload {
+  items: EquipmentItem[];
+  total?: number;
+}
+
 function assertArray<T>(value: unknown, fallback: T[] = []): T[] {
   return Array.isArray(value) ? (value as T[]) : fallback;
 }
 
+async function fetchOptionalJson<T>(url: string, fallback: T): Promise<T> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return fallback;
+    return (await response.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function loadGameData(): Promise<GameData> {
-  const [monsterPayload, mapPayload, portals] = await Promise.all([
+  const [monsterPayload, mapPayload, portals, itemPayload] = await Promise.all([
     fetch(`${DATA_ROOT}/monsters.json`).then((r) => r.json()) as Promise<MonsterPayload>,
     fetch(`${DATA_ROOT}/maps.json`).then((r) => r.json()) as Promise<MapPayload>,
     fetch(`${DATA_ROOT}/portals.json`).then((r) => r.json()) as Promise<Record<string, PortalRef[]>>,
+    fetchOptionalJson<ItemPayload>(`${DATA_ROOT}/items.json`, { items: [] }),
   ]);
 
   const regions = assertArray<MapRegionPayload>(mapPayload.regions);
@@ -37,6 +53,7 @@ export async function loadGameData(): Promise<GameData> {
     monsters: assertArray(monsterPayload.monsters),
     maps,
     portals: portals ?? {},
+    equipmentItems: assertArray(itemPayload.items),
   };
 }
 
@@ -44,7 +61,6 @@ function parseRespawnSeconds(value: string | number | null | undefined): number 
   if (value === null || value === undefined || value === '') return 8;
   const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 8;
-  // In the metadata most values are small such as 1.00. Treat them as seconds but clamp to a practical floor.
   return Math.max(4, parsed);
 }
 
