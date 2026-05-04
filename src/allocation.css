@@ -1,0 +1,52 @@
+.allocation-panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 2px solid #6f4a28;
+  border-radius: 18px;
+  background: rgba(255, 250, 235, 0.88);
+  box-shadow: 0 7px 0 rgba(96, 63, 33, 0.35);
+}
+
+.allocation-summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed #a7743e;
+  background: #fff1cf;
+  color: #5b3b1d;
+  font-weight: 700;
+}
+
+.build-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.allocation-table {
+  margin-top: 16px;
+}
+
+.allocation-table table {
+  min-width: 1180px;
+}
+
+.allocation-table td small {
+  display: block;
+  margin-top: 3px;
+  color: #7b5c3c;
+}
+
+@media (max-width: 980px) {
+  .build-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .build-grid {
+    grid-template-columns: 1fr;
+  }
+}
