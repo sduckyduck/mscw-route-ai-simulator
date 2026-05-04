@@ -137,13 +137,15 @@ export async function trainTensorFlowDqn(data: GameData, input: SimulationInput,
     const action = ACTIONS[actionIndex] ?? 'poor_start';
     const result = evaluate(data, input, action);
     const r = reward(result);
-
     const targetQ = currentQ.slice();
     targetQ[actionIndex] = r;
 
-    const lossTensor = await model.trainOnBatch(tf.tensor2d([state]), tf.tensor2d([targetQ])) as tf.Scalar;
-    const lossValue = Array.isArray(lossTensor) ? Number(await lossTensor[0].data()) : Number((await lossTensor.data())[0]);
-    if (!Array.isArray(lossTensor)) lossTensor.dispose();
+    const xs = tf.tensor2d([state]);
+    const ys = tf.tensor2d([targetQ]);
+    const trainResult = await model.trainOnBatch(xs, ys) as number | number[];
+    xs.dispose();
+    ys.dispose();
+    const lossValue = Array.isArray(trainResult) ? Number(trainResult[0] ?? 0) : Number(trainResult);
 
     if (r > bestReward) {
       bestReward = r;
@@ -157,7 +159,7 @@ export async function trainTensorFlowDqn(data: GameData, input: SimulationInput,
       action,
       reward: Math.round(r * 100) / 100,
       loss: Math.round(lossValue * 10000) / 10000,
-      predictedQ: Math.round(currentQ[actionIndex] * 100) / 100,
+      predictedQ: Math.round((currentQ[actionIndex] ?? 0) * 100) / 100,
       totalHours: result.totalHours,
       endingMeso: result.endingMeso,
       potionCost: result.totalPotionCost,
