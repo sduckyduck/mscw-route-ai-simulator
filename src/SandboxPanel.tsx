@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { runSandboxSimulation, type SandboxFrame, type SandboxRunResult } from './simulator/sandboxEngine';
 import type { ObjectivePreset } from './simulator/experimentOptimizer2';
+import { runRlTraining, type RlAlgorithm, type RlTrainingReport } from './simulator/rlTrainer';
 import type { GameData, SimulationInput } from './simulator/types';
 import { formatHours, formatMeso } from './simulator/report';
 import './sandbox.css';
@@ -14,6 +15,12 @@ const objectiveLabels: Record<ObjectivePreset, string> = {
   craft_only: '全锻造装备',
   drop_only: '全怪物掉落',
   comfort: '爽玩综合',
+};
+
+const rlLabels: Record<RlAlgorithm, string> = {
+  dqn_lite: 'DQN-lite / Q-learning',
+  ppo_stub: 'PPO 接口',
+  dreamer_stub: 'Dreamer 接口',
 };
 
 function actionText(action: SandboxFrame['action']): string {
@@ -95,6 +102,58 @@ function Bar({ label, value, className = '' }: { label: string; value: number; c
   );
 }
 
+function RlPanel({ report, onUsePolicy }: { report: RlTrainingReport; onUsePolicy: (objective: ObjectivePreset) => void }) {
+  const qRows = Object.entries(report.qValues).sort((a, b) => b[1] - a[1]) as [ObjectivePreset, number][];
+  return (
+    <div className="rl-panel">
+      <div className="section-title">RL 训练结果</div>
+      <div className="sandbox-findings">
+        <div className="finding optimization">
+          <strong>学到的策略</strong>
+          <p>{objectiveLabels[report.bestObjective]}，奖励 {report.bestReward}，状态 {report.stateKey}</p>
+        </div>
+        <div className="finding warning">
+          <strong>算法说明</strong>
+          <p>{report.note}</p>
+        </div>
+      </div>
+      <button className="secondary" onClick={() => onUsePolicy(report.bestObjective)}>用 RL 学到的策略跑沙盒</button>
+      <div className="sandbox-table-wrap">
+        <table>
+          <thead><tr><th>策略动作</th><th>Q 值</th></tr></thead>
+          <tbody>
+            {qRows.map(([action, value]) => (
+              <tr key={action}><td>{objectiveLabels[action]}</td><td>{value}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="sandbox-table-wrap">
+        <table>
+          <thead>
+            <tr><th>Episode</th><th>探索率</th><th>动作</th><th>奖励</th><th>Q值</th><th>耗时</th><th>金币</th><th>死亡</th><th>舒适度</th></tr>
+          </thead>
+          <tbody>
+            {report.history.slice(-30).map((row) => (
+              <tr key={row.episode}>
+                <td>{row.episode}</td>
+                <td>{row.epsilon}</td>
+                <td>{objectiveLabels[row.action]}</td>
+                <td>{row.reward}</td>
+                <td>{row.qValue}</td>
+                <td>{formatHours(row.totalHours)}</td>
+                <td>{formatMeso(row.endingMeso)}</td>
+                <td>{row.expectedDeaths}</td>
+                <td>{row.comfort}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function DecisionLog({ result }: { result: SandboxRunResult }) {
   return (
     <div className="sandbox-table-wrap decision-log">
@@ -102,17 +161,7 @@ function DecisionLog({ result }: { result: SandboxRunResult }) {
       <table>
         <thead>
           <tr>
-            <th>等级</th>
-            <th>AP 决策</th>
-            <th>SP 决策</th>
-            <th>装备决策</th>
-            <th>地图 / 怪物</th>
-            <th>命中</th>
-            <th>本级耗时</th>
-            <th>药耗/MP</th>
-            <th>死亡期望</th>
-            <th>当前属性</th>
-            <th>原因</th>
+            <th>等级</th><th>AP 决策</th><th>SP 决策</th><th>装备决策</th><th>地图 / 怪物</th><th>命中</th><th>本级耗时</th><th>药耗/MP</th><th>死亡期望</th><th>当前属性</th><th>原因</th>
           </tr>
         </thead>
         <tbody>
@@ -127,11 +176,7 @@ function DecisionLog({ result }: { result: SandboxRunResult }) {
               <td>{formatHours(decision.hours)}</td>
               <td>{formatMeso(decision.potionCost)}</td>
               <td>{decision.deathsExpected.toFixed(2)}</td>
-              <td>
-                STR {decision.statSnapshot.str} / DEX {decision.statSnapshot.dex}<br />
-                WATK {decision.statSnapshot.weaponAttack} / ACC {decision.statSnapshot.accuracy}<br />
-                AVOID {decision.statSnapshot.avoid}
-              </td>
+              <td>STR {decision.statSnapshot.str} / DEX {decision.statSnapshot.dex}<br />WATK {decision.statSnapshot.weaponAttack} / ACC {decision.statSnapshot.accuracy}<br />AVOID {decision.statSnapshot.avoid}</td>
               <td>{decision.reason}</td>
             </tr>
           ))}
@@ -146,35 +191,13 @@ function AlternativesTable({ result }: { result: SandboxRunResult }) {
     <div className="sandbox-table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>排名</th>
-            <th>方案</th>
-            <th>分数</th>
-            <th>耗时</th>
-            <th>最终金币</th>
-            <th>药耗</th>
-            <th>装备</th>
-            <th>死亡</th>
-            <th>舒适度</th>
-            <th>最终属性</th>
-          </tr>
+          <tr><th>排名</th><th>方案</th><th>分数</th><th>耗时</th><th>最终金币</th><th>药耗</th><th>装备</th><th>死亡</th><th>舒适度</th><th>最终属性</th></tr>
         </thead>
         <tbody>
           {result.alternatives.slice(0, 8).map((item, index) => (
             <tr key={item.candidate.id} className={index === 0 ? 'best-row' : ''}>
-              <td>{index + 1}</td>
-              <td>{item.candidate.label}</td>
-              <td>{item.objectiveScore}</td>
-              <td>{formatHours(item.totalHours)}</td>
-              <td>{formatMeso(item.endingMeso)}</td>
-              <td>{formatMeso(item.totalPotionCost)}</td>
-              <td>{formatMeso(item.totalGearCost)}</td>
-              <td>{item.expectedDeaths}</td>
-              <td>{item.comfortScore}</td>
-              <td>
-                STR {item.finalStats.str} / DEX {item.finalStats.dex}<br />
-                WATK {item.finalStats.weaponAttack} / ACC {item.finalStats.accuracy}
-              </td>
+              <td>{index + 1}</td><td>{item.candidate.label}</td><td>{item.objectiveScore}</td><td>{formatHours(item.totalHours)}</td><td>{formatMeso(item.endingMeso)}</td><td>{formatMeso(item.totalPotionCost)}</td><td>{formatMeso(item.totalGearCost)}</td><td>{item.expectedDeaths}</td><td>{item.comfortScore}</td>
+              <td>STR {item.finalStats.str} / DEX {item.finalStats.dex}<br />WATK {item.finalStats.weaponAttack} / ACC {item.finalStats.accuracy}</td>
             </tr>
           ))}
         </tbody>
@@ -186,6 +209,9 @@ function AlternativesTable({ result }: { result: SandboxRunResult }) {
 export function SandboxPanel({ data, input }: { data: GameData; input: SimulationInput }) {
   const [objective, setObjective] = useState<ObjectivePreset>('comfort');
   const [result, setResult] = useState<SandboxRunResult | null>(null);
+  const [rlAlgorithm, setRlAlgorithm] = useState<RlAlgorithm>('dqn_lite');
+  const [episodes, setEpisodes] = useState(24);
+  const [rlReport, setRlReport] = useState<RlTrainingReport | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(2);
@@ -211,12 +237,18 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
     return () => window.clearInterval(timer);
   }, [playing, result, speed]);
 
-  const run = () => {
-    const sandbox = runSandboxSimulation(data, input.jobKey, input.startLevel, Math.max(input.startLevel + 1, input.targetLevel), objective);
+  const run = (overrideObjective = objective) => {
+    const sandbox = runSandboxSimulation(data, input.jobKey, input.startLevel, Math.max(input.startLevel + 1, input.targetLevel), overrideObjective);
+    setObjective(overrideObjective);
     setResult(sandbox);
     setFrameIndex(0);
     setPlaying(true);
     setCopied(false);
+  };
+
+  const train = () => {
+    const report = runRlTraining(data, input, rlAlgorithm, objective, episodes);
+    setRlReport(report);
   };
 
   const copyReport = async () => {
@@ -230,38 +262,26 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
       <div className="sandbox-header">
         <div>
           <div className="section-title">AI 沙盒模拟器</div>
-          <p>用多方案 build search 跑 AP、装备、药耗、死亡、命中和地图选择，再把最优方案回放成小沙盘。</p>
+          <p>先用 RL 训练层反复试跑策略，再用学到的目标函数生成逐级沙盒回放。</p>
         </div>
         <div className="sandbox-controls">
-          <label>
-            目标函数
-            <select value={objective} onChange={(event) => setObjective(event.target.value as ObjectivePreset)}>
-              {Object.entries(objectiveLabels).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <button onClick={run}>运行沙盒</button>
+          <label>目标函数<select value={objective} onChange={(event) => setObjective(event.target.value as ObjectivePreset)}>{Object.entries(objectiveLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+          <label>RL 算法<select value={rlAlgorithm} onChange={(event) => setRlAlgorithm(event.target.value as RlAlgorithm)}>{Object.entries(rlLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+          <label>Episodes<input type="number" min={1} max={300} value={episodes} onChange={(event) => setEpisodes(Number(event.target.value))} /></label>
+          <button onClick={train}>训练 AI 小人</button>
+          <button onClick={() => run()}>运行沙盒</button>
         </div>
       </div>
+
+      {rlReport ? <RlPanel report={rlReport} onUsePolicy={(obj) => run(obj)} /> : null}
 
       {result && currentFrame ? (
         <>
           <div className="sandbox-playbar">
             <button className="secondary" onClick={() => setPlaying((value) => !value)}>{playing ? '暂停' : '播放'}</button>
             <button className="secondary" onClick={() => setFrameIndex(0)}>回到开头</button>
-            <label>
-              速度 {speed}x
-              <input type="range" min={1} max={8} step={1} value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
-            </label>
-            <input
-              className="frame-slider"
-              type="range"
-              min={0}
-              max={Math.max(0, result.frames.length - 1)}
-              value={frameIndex}
-              onChange={(event) => setFrameIndex(Number(event.target.value))}
-            />
+            <label>速度 {speed}x<input type="range" min={1} max={8} step={1} value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
+            <input className="frame-slider" type="range" min={0} max={Math.max(0, result.frames.length - 1)} value={frameIndex} onChange={(event) => setFrameIndex(Number(event.target.value))} />
             <span>{frameIndex + 1} / {result.frames.length}</span>
             <button className="secondary" onClick={copyReport}>{copied ? '报告已复制' : '复制沙盒报告'}</button>
           </div>
@@ -276,14 +296,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
             </div>
             <div>
               <SandboxStats frame={currentFrame} result={result} />
-              <div className="sandbox-findings">
-                {result.findings.map((finding) => (
-                  <div key={finding.title} className={`finding ${finding.type}`}>
-                    <strong>{finding.title}</strong>
-                    <p>{finding.detail}</p>
-                  </div>
-                ))}
-              </div>
+              <div className="sandbox-findings">{result.findings.map((finding) => <div key={finding.title} className={`finding ${finding.type}`}><strong>{finding.title}</strong><p>{finding.detail}</p></div>)}</div>
             </div>
           </div>
 
@@ -291,9 +304,7 @@ export function SandboxPanel({ data, input }: { data: GameData; input: Simulatio
           <AlternativesTable result={result} />
         </>
       ) : (
-        <div className="sandbox-empty">
-          先选择目标函数，然后点击“运行沙盒”。它会跑多种 build，自动挑一个最优方案并生成可回放时间线。
-        </div>
+        <div className="sandbox-empty">先点击“训练 AI 小人”学习策略，或者直接点击“运行沙盒”。</div>
       )}
     </div>
   );
