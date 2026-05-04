@@ -20,6 +20,7 @@
   "include": ["src"],
   "exclude": [
     "src/simulator/allocation.ts",
-    "src/simulator/allocation2.ts"
+    "src/simulator/allocation2.ts",
+    "src/simulator/allocation3.ts"
   ]
 }
